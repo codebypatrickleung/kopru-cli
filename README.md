@@ -1,6 +1,6 @@
 # Project Kopru
 
-Kopru is a Go-based CLI tool that automates migration of Compute instances into Oracle Cloud Infrastructure (OCI). Migrating workloads between clouds is often manual and costly; Kopru streamlines this with a customizable, extensible workflow for simpler, affordable imports.
+Kopru is a Go-based CLI tool that automates migration of Compute instances into Oracle Cloud Infrastructure (OCI). Migrating workloads between clouds is often manual and costly. Kopru streamlines this with a customizable, extensible workflow for simpler, affordable Compute imports into OCI.
 
 ## Features
 
@@ -29,7 +29,7 @@ See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks
 Clone the Kopru CLI repository and navigate into it.  
 
   ```bash
-  git clone <>
+  git clone https://github.com/codebypatrickleung/kopru-cli.git
   cd kopru-cli
   ```
 
