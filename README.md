@@ -53,7 +53,7 @@ Build the Kopru CLI binary.
 
 Kopru does not handle authentication directly. Set up authentication for both Azure and OCI using the official SDK methods:
 
-  - **Azure**: Kopru uses `DefaultAzureCredential`. See [Azure docs](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps). Set:
+  - **Azure**: Kopru uses `DefaultAzureCredential`. See [Azure Go SDK docs](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps). Set:
     ```bash
     export AZURE_TENANT_ID="your-tenant-id"
     export AZURE_CLIENT_ID="your-client-id"
@@ -64,7 +64,7 @@ Kopru does not handle authentication directly. Set up authentication for both Az
 
 6. Run Kopru using one of these methods:
 
-Step 1-5 are the hard part! Now, run Kopru to start the migration. There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only four required parameters, which essentially identify the source Azure VM and target OCI compartment/subnet.
+Step 1-5 are the hard part! Now, run Kopru to start the migration. There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only four required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet. So basically, just tell Kopru what Azure VM to migrate and where to put it in OCI.
 
   - **Environment variables**:
     ```bash
