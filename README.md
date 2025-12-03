@@ -1,4 +1,4 @@
-# Project Kopru
+# Kopru
 
 Kopru is a Go-based CLI tool that automates migration of Compute instances into Oracle Cloud Infrastructure (OCI). Migrating workloads between clouds is often manual and costly. Kopru streamlines this with a customizable, extensible workflow for simpler, affordable Compute imports into OCI.
 
@@ -99,8 +99,6 @@ This is an optional step as the tool can auto-deploy the generated template. If 
   tofu apply
   ```
 
-If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core, and is part of the Linux Foundation. The generated templates maintain compatibility.
+If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core, and is part of the Linux Foundation. The generated templates maintain compatibility. 
 
-## Contributing
-
-Contributions are welcome! Open issues or pull requests for bug fixes, enhancements, or new features.
+That's it! Hopefully this guide helps you get started with Kopru for your cloud migrations to OCI. For more details, please feel free to connect with me on [LinkedIn](https://www.linkedin.com/in/pgwl/) or GitHub. Happy migrating! 
