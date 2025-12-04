@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -113,34 +112,34 @@ func (m *Manager) ApplyUbuntuConfigurations() error {
 
 	m.logger.Info("Applying Ubuntu configurations for OCI compatibility...")
 
-	// Fix network interface names
-	if err := m.fixNetworkInterfaces(); err != nil {
-		m.logger.Warning(fmt.Sprintf("Failed to fix network interfaces: %v", err))
-	}
-
 	// Apply source platform-specific cleanup
 	if m.sourcePlatform == "azure" {
 		m.logger.Info("Applying Azure source platform cleanup...")
 
-		// Remove Azure-specific udev rules
-		if err := m.removeAzureUdevRules(); err != nil {
-			m.logger.Warning(fmt.Sprintf("Failed to remove Azure udev rules: %v", err))
+		// Disable Azure-specific udev rules
+		if err := m.disableAzureUdevRules(); err != nil {
+			m.logger.Warning(fmt.Sprintf("Failed to disable Azure udev rules: %v", err))
 		}
 
-		// Remove WALinux Agent
-		if err := m.removeWALinuxAgent(); err != nil {
-			m.logger.Warning(fmt.Sprintf("Failed to remove WALinux Agent: %v", err))
+		// Disable WALinux Agent
+		if err := m.disableWALinuxAgent(); err != nil {
+			m.logger.Warning(fmt.Sprintf("Failed to disable WALinux Agent: %v", err))
+		}
+
+		// Disable Azure Linux hosts template
+		if err := m.disableAzureHostsTemplate(); err != nil {
+			m.logger.Warning(fmt.Sprintf("Failed to disable Azure hosts template: %v", err))
+		}
+
+		// Comment out Azure PTP hyperv refclock in chrony
+		if err := m.commentOutAzureChronyRefclock(); err != nil {
+			m.logger.Warning(fmt.Sprintf("Failed to comment out Azure chrony refclock: %v", err))
 		}
 	}
 
 	// Configure cloud-init for OCI
 	if err := m.configureCloudInit(); err != nil {
 		m.logger.Warning(fmt.Sprintf("Failed to configure cloud-init: %v", err))
-	}
-
-	// Clear machine-id
-	if err := m.clearMachineID(); err != nil {
-		m.logger.Warning(fmt.Sprintf("Failed to clear machine-id: %v", err))
 	}
 
 	// Update GRUB for OCI console
@@ -243,50 +242,127 @@ func (m *Manager) findRootPartition() (string, error) {
 	return "", fmt.Errorf("no suitable root partition found")
 }
 
-func (m *Manager) fixNetworkInterfaces() error {
-	// Fix netplan configuration
-	netplanFile := filepath.Join(m.mountDir, "etc/netplan/50-cloud-init.yaml")
-	if _, err := os.Stat(netplanFile); err == nil {
-		m.logger.Info("Updating netplan config to use eth0...")
-		content, err := os.ReadFile(netplanFile)
-		if err != nil {
-			return err
-		}
+func (m *Manager) disableAzureUdevRules() error {
+	m.logger.Info("Disabling Azure-specific udev rules...")
 
-		// Use regex to replace interface names like ens3, ens160, etc. with eth0
-		// This matches "ens" followed by one or more digits
-		re := regexp.MustCompile(`ens\d+`)
-		updated := re.ReplaceAllString(string(content), "eth0")
+	azureRules := []string{
+		"66-azure-storage.rules",
+		"99-azure-product-uuid.rules",
+	}
 
-		if err := m.writeFile(netplanFile, updated); err != nil {
-			return err
+	for _, rule := range azureRules {
+		rulePath := filepath.Join(m.mountDir, "etc/udev/rules.d", rule)
+		disabledPath := rulePath + ".disable"
+		if _, err := os.Stat(rulePath); err == nil {
+			if err := os.Rename(rulePath, disabledPath); err != nil {
+				m.logger.Warning(fmt.Sprintf("Failed to disable %s: %v", rule, err))
+			} else {
+				m.logger.Successf("✓ Disabled %s", rule)
+			}
 		}
-		m.logger.Success("✓ Updated netplan config")
 	}
 
 	return nil
 }
 
-func (m *Manager) removeAzureUdevRules() error {
-	m.logger.Info("Removing Azure-specific udev rules...")
+func (m *Manager) disableAzureHostsTemplate() error {
+	m.logger.Info("Disabling Azure hosts template...")
 
-	azureRules := []string{
-		"10-azure-kvp.cfg",
-		"90-azure.cfg",
-		"90_dpkg.cfg",
+	hostsTemplatePath := filepath.Join(m.mountDir, "etc/cloud/templates/hosts.azurelinux.tmpl")
+	
+	// Check if the file exists
+	if _, err := os.Stat(hostsTemplatePath); os.IsNotExist(err) {
+		m.logger.Info("Azure hosts template not found, skipping...")
+		return nil
 	}
 
-	for _, rule := range azureRules {
-		rulePath := filepath.Join(m.mountDir, "etc/cloud/cloud.cfg.d", rule)
-		if _, err := os.Stat(rulePath); err == nil {
-			if err := m.runCommand("sudo", "rm", "-f", rulePath); err != nil {
-				m.logger.Warning(fmt.Sprintf("Failed to remove %s: %v", rule, err))
-			} else {
-				m.logger.Successf("✓ Removed %s", rule)
-			}
+	// Read the current content
+	content, err := os.ReadFile(hostsTemplatePath)
+	if err != nil {
+		return fmt.Errorf("failed to read hosts template: %w", err)
+	}
+
+	// Check if "disable" is already appended
+	contentStr := string(content)
+	if strings.HasSuffix(strings.TrimSpace(contentStr), "disable") {
+		m.logger.Info("✓ Azure hosts template already disabled")
+		return nil
+	}
+
+	// Append "disable" to the file
+	updated := contentStr
+	if !strings.HasSuffix(contentStr, "\n") {
+		updated += "\n"
+	}
+	updated += "disable\n"
+
+	if err := m.writeFile(hostsTemplatePath, updated); err != nil {
+		return fmt.Errorf("failed to update hosts template: %w", err)
+	}
+
+	m.logger.Success("✓ Disabled Azure hosts template")
+	return nil
+}
+
+func (m *Manager) commentOutAzureChronyRefclock() error {
+	m.logger.Info("Commenting out Azure PTP hyperv refclock in chrony config...")
+
+	chronyConfPath := filepath.Join(m.mountDir, "etc/chrony/chrony.conf")
+	
+	// Check if the file exists
+	if _, err := os.Stat(chronyConfPath); os.IsNotExist(err) {
+		m.logger.Info("Chrony config not found, skipping...")
+		return nil
+	}
+
+	// Read the current content
+	content, err := os.ReadFile(chronyConfPath)
+	if err != nil {
+		return fmt.Errorf("failed to read chrony config: %w", err)
+	}
+
+	contentStr := string(content)
+	targetLine := "refclock PHC /dev/ptp_hyperv poll 3 dpoll -2 offset 0"
+	commentedLine := "# " + targetLine
+	ociServerLine := "server 169.254.169.254 iburst"
+
+	// Check if the line exists and needs to be commented
+	if !strings.Contains(contentStr, targetLine) {
+		m.logger.Info("Azure PTP hyperv refclock not found in chrony config, skipping...")
+		return nil
+	}
+
+	// Check if all occurrences are already commented by checking if uncommented version exists
+	hasUncommented := false
+	lines := strings.Split(contentStr, "\n")
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == targetLine {
+			hasUncommented = true
+			break
 		}
 	}
 
+	if !hasUncommented {
+		m.logger.Info("✓ Azure PTP hyperv refclock already commented out")
+		return nil
+	}
+
+	// Comment out all occurrences of the line (using ReplaceAll to handle potential duplicates)
+	updated := strings.ReplaceAll(contentStr, targetLine, commentedLine)
+
+	// Add OCI time server if not already present
+	if !strings.Contains(updated, ociServerLine) {
+		// Add the OCI server line after the commented refclock line
+		updated = strings.ReplaceAll(updated, commentedLine, commentedLine+"\n"+ociServerLine)
+		m.logger.Info("✓ Added OCI time server to chrony config")
+	}
+
+	if err := m.writeFile(chronyConfPath, updated); err != nil {
+		return fmt.Errorf("failed to update chrony config: %w", err)
+	}
+
+	m.logger.Success("✓ Commented out Azure PTP hyperv refclock")
 	return nil
 }
 
@@ -297,7 +373,7 @@ func (m *Manager) configureCloudInit() error {
 
 	// Create cloud.cfg.d directory if it doesn't exist
 	cloudCfgDir := filepath.Join(m.mountDir, "etc/cloud/cloud.cfg.d")
-	if err := m.runCommand("sudo", "mkdir", "-p", cloudCfgDir); err != nil {
+	if err := os.MkdirAll(cloudCfgDir, 0755); err != nil {
 		return err
 	}
 
@@ -306,12 +382,31 @@ func (m *Manager) configureCloudInit() error {
 		return err
 	}
 
+	// Disable Azure specific cloud-init files if present
+	azureFiles := []string{
+		"10-azure-kvp.cfg",
+		"90-azure.cfg",
+		"90_dpkg.cfg",
+	}
+
+	for _, file := range azureFiles {
+		filePath := filepath.Join(m.mountDir, "etc/cloud/cloud.cfg.d", file)
+		disabledPath := filePath + ".disable"
+		if _, err := os.Stat(filePath); err == nil {
+			if err := os.Rename(filePath, disabledPath); err != nil {
+				m.logger.Warning(fmt.Sprintf("Failed to disable %s: %v", file, err))
+			} else {
+				m.logger.Successf("✓ Disabled %s", file)
+			}
+		}
+	}
+
 	m.logger.Success("✓ Configured cloud-init datasource")
 	return nil
 }
 
-func (m *Manager) removeWALinuxAgent() error {
-	m.logger.Info("Removing WALinux Agent files...")
+func (m *Manager) disableWALinuxAgent() error {
+	m.logger.Info("Disabling WALinux Agent files...")
 
 	waagentPaths := []string{
 		"/var/lib/waagent",
@@ -325,38 +420,13 @@ func (m *Manager) removeWALinuxAgent() error {
 
 	for _, path := range waagentPaths {
 		fullPath := filepath.Join(m.mountDir, path)
+		disabledPath := fullPath + ".disable"
 		if _, err := os.Stat(fullPath); err == nil {
-			if err := m.runCommand("sudo", "rm", "-rf", fullPath); err != nil {
-				m.logger.Warning(fmt.Sprintf("Failed to remove %s: %v", path, err))
+			if err := os.Rename(fullPath, disabledPath); err != nil {
+				m.logger.Warning(fmt.Sprintf("Failed to disable %s: %v", path, err))
 			} else {
-				m.logger.Successf("✓ Removed %s", path)
+				m.logger.Successf("✓ Disabled %s", path)
 			}
-		}
-	}
-
-	return nil
-}
-
-func (m *Manager) clearMachineID() error {
-	m.logger.Info("Clearing machine-id for regeneration...")
-
-	// Clear /etc/machine-id (should be empty or contain a valid machine ID)
-	machineIDPath := filepath.Join(m.mountDir, "etc/machine-id")
-	if _, err := os.Stat(machineIDPath); err == nil {
-		// Write empty string - systemd will regenerate on first boot
-		if err := m.writeFile(machineIDPath, ""); err != nil {
-			return err
-		}
-		m.logger.Success("✓ Cleared /etc/machine-id")
-	}
-
-	// Remove /var/lib/dbus/machine-id
-	dbusMachineIDPath := filepath.Join(m.mountDir, "var/lib/dbus/machine-id")
-	if _, err := os.Stat(dbusMachineIDPath); err == nil {
-		if err := m.runCommand("sudo", "rm", "-f", dbusMachineIDPath); err != nil {
-			m.logger.Warning(fmt.Sprintf("Failed to remove dbus machine-id: %v", err))
-		} else {
-			m.logger.Success("✓ Removed dbus machine-id")
 		}
 	}
 

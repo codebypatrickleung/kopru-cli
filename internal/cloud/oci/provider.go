@@ -201,7 +201,7 @@ func (p *Provider) UploadToObjectStorage(ctx context.Context, namespace, bucketN
 }
 
 // ImportCustomImage imports a custom image from Object Storage.
-func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, displayName, namespace, bucketName, objectName string) (string, error) {
+func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, displayName, namespace, bucketName, objectName, operatingSystem string) (string, error) {
 	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to create compute client: %w", err)
@@ -213,7 +213,11 @@ func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, display
 		p.region, namespace, bucketName, encodedObjectName)
 
 	// Import image from Object Storage
-	operatingSystem := common.String("Linux")
+	// Default to "Generic Linux" if operatingSystem is empty.
+	if operatingSystem == "" {
+		operatingSystem = "Generic Linux"
+	}
+	osPtr := common.String(operatingSystem)
 
 	req := core.CreateImageRequest{
 		CreateImageDetails: core.CreateImageDetails{
@@ -222,7 +226,7 @@ func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, display
 			LaunchMode:    core.CreateImageDetailsLaunchModeParavirtualized,
 			ImageSourceDetails: core.ImageSourceViaObjectStorageUriDetails{
 				SourceUri:       &sourceURL,
-				OperatingSystem: operatingSystem,
+				OperatingSystem: osPtr,
 			},
 		},
 	}

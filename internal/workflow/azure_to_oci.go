@@ -437,7 +437,8 @@ func (h *AzureToOCIHandler) importImage(ctx context.Context) error {
 		h.config.OCIImageName,
 		namespace,
 		h.config.OCIBucketName,
-		objectName)
+		objectName,
+		h.config.OCIImageOS)
 	if err != nil {
 		return fmt.Errorf("failed to import custom image: %w", err)
 	}
@@ -791,11 +792,11 @@ func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
 	h.logger.Info("Next Steps:")
 	if !h.config.SkipTemplateDeploy {
 		h.logger.Info("1. Check the OCI console for the deployed instance")
-		h.logger.Info("2. SSH into the instance using the provided key")
+		h.logger.Info("2. Verify the instance is running as expected")
 	} else {
 		h.logger.Infof("1. Navigate to: %s", h.config.TemplateOutputDir)
 		h.logger.Info("2. Run: tofu init && tofu apply")
-		h.logger.Info("3. SSH into the instance using the provided key")
+		h.logger.Info("3. Check the OCI console for the deployed instance")
 	}
 	h.logger.Info("=========================================")
 
