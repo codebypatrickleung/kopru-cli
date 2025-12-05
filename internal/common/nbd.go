@@ -1,4 +1,5 @@
 // Package common provides utility functions for NBD (Network Block Device) operations.
+
 package common
 
 import (
@@ -9,22 +10,15 @@ import (
 	"time"
 )
 
-const (
-	// OCIMinVolumeSizeGB is the minimum volume size in GB for OCI block volumes
-	OCIMinVolumeSizeGB = 50
-	// MinDiskSpaceGB is the recommended minimum disk space in GB for migration operations
-	MinDiskSpaceGB = 100
-)
-
 // LoadNBDModule loads the NBD kernel module with specified parameters.
 func LoadNBDModule() error {
 	// Check if module is already loaded
-	if isNBDModuleLoaded() {
+	if IsNBDModuleLoaded() {
 		return nil
 	}
 
 	// Load the module with parameters
-	cmd := exec.Command("sudo", "modprobe", "nbd", "max_part=8", "nbds_max=16")
+	cmd := exec.Command("sudo", "modprobe", "nbd", "max_part=16", "nbds_max=16")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to load NBD module: %w", err)
 	}
@@ -35,8 +29,8 @@ func LoadNBDModule() error {
 	return nil
 }
 
-// isNBDModuleLoaded checks if the NBD module is loaded.
-func isNBDModuleLoaded() bool {
+// IsNBDModuleLoaded checks if the NBD module is loaded.
+func IsNBDModuleLoaded() bool {
 	// Check if /dev/nbd0 exists
 	_, err := os.Stat("/dev/nbd0")
 	return err == nil
@@ -58,69 +52,26 @@ func ConnectVHDToNBD(vhdFile, nbdDevice string) error {
 	return nil
 }
 
+// ConnectQCOW2ToNBD connects a QCOW2 file to an NBD device.
+func ConnectQCOW2ToNBD(qcow2File, nbdDevice string) error {
+	// Use qemu-nbd to connect the QCOW2 to the NBD device
+	cmd := exec.Command("sudo", "qemu-nbd", "--connect="+nbdDevice, qcow2File, "-f", "qcow2")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to connect QCOW2 to NBD: %w", err)
+	}
+
+	// Wait for device to be ready (NBD device nodes need time to appear)
+	// This is necessary for the kernel to create partition devices
+	time.Sleep(3 * time.Second)
+
+	return nil
+}
+
 // DisconnectNBD disconnects an NBD device.
 func DisconnectNBD(nbdDevice string) error {
 	cmd := exec.Command("sudo", "qemu-nbd", "--disconnect", nbdDevice)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to disconnect NBD: %w", err)
-	}
-
-	return nil
-}
-
-// FindMountablePartition finds a mountable partition on an NBD device.
-// It tries to find partitions in order: nbd0p1, nbd0p2, etc., or the device itself.
-func FindMountablePartition(nbdDevice string) (string, error) {
-	// First, try to find partitions
-	partitions := []string{
-		nbdDevice + "p1",
-		nbdDevice + "p2",
-		nbdDevice + "p3",
-		nbdDevice + "1",
-		nbdDevice + "2",
-		nbdDevice + "3",
-		nbdDevice, // Try the device itself if no partitions
-	}
-
-	for _, partition := range partitions {
-		if _, err := os.Stat(partition); err == nil {
-			// Check if partition has a filesystem
-			if hasFilesystem(partition) {
-				return partition, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("no mountable partition found on %s", nbdDevice)
-}
-
-// hasFilesystem checks if a device has a recognizable filesystem.
-func hasFilesystem(device string) bool {
-	cmd := exec.Command("sudo", "blkid", device)
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-
-	// If blkid returns output, it has a filesystem
-	return len(output) > 0
-}
-
-// MountPartition mounts a partition to a mount point.
-func MountPartition(partition, mountPoint string) error {
-	cmd := exec.Command("sudo", "mount", partition, mountPoint)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to mount partition: %w", err)
-	}
-
-	return nil
-}
-
-// UnmountPartition unmounts a mount point.
-func UnmountPartition(mountPoint string) error {
-	cmd := exec.Command("sudo", "umount", mountPoint)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to unmount partition: %w", err)
 	}
 
 	return nil
@@ -151,110 +102,105 @@ func CleanupNBDMount(nbdDevice, mountPoint string) error {
 	return lastErr
 }
 
-// GetFileSizeGB returns the size of a file in gigabytes.
-func GetFileSizeGB(filePath string) (int64, error) {
-	info, err := os.Stat(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get file info: %w", err)
+// FindMountablePartition finds a mountable partition on an NBD device.
+// It tries to find partitions in order: nbd0p1, nbd0p2, etc., or the device itself.
+func FindMountablePartition(nbdDevice string) (string, error) {
+	// First, try to find partitions
+	partitions := []string{
+		nbdDevice + "p1",
+		nbdDevice + "p2",
+		nbdDevice + "p3",
+		nbdDevice + "1",
+		nbdDevice + "2",
+		nbdDevice + "3",
+		nbdDevice, // Try the device itself if no partitions
 	}
 
-	// Get size in bytes and convert to GB, rounding up
-	sizeBytes := info.Size()
-	sizeGB := (sizeBytes + (1024*1024*1024 - 1)) / (1024 * 1024 * 1024)
-
-	// Enforce OCI minimum volume size
-	if sizeGB < OCIMinVolumeSizeGB {
-		sizeGB = OCIMinVolumeSizeGB
+	for _, partition := range partitions {
+		if _, err := os.Stat(partition); err == nil {
+			// Check if partition has a filesystem
+			if HasFilesystem(partition) {
+				return partition, nil
+			}
+		}
 	}
 
-	return sizeGB, nil
+	return "", fmt.Errorf("no mountable partition found on %s", nbdDevice)
 }
 
-// CopyDataWithDD copies data from source to destination using dd.
-func CopyDataWithDD(source, destination string) error {
-	cmd := exec.Command("sudo", "dd",
-		"if="+source,
-		"of="+destination,
-		"bs=4M",
-		"status=progress",
-		"conv=fsync")
-
-	// Redirect output to /dev/null to avoid cluttering logs
-	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open /dev/null: %w", err)
+// MountQCOW2Image mounts a QCOW2 or VHD image using NBD and returns the mount directory and partition.
+// It handles loading the NBD module, connecting the image, finding a mountable partition, and mounting it.
+// The caller is responsible for calling CleanupNBDMount when done.
+func MountQCOW2Image(imageFile, nbdDevice string) (mountDir string, partition string, err error) {
+	// Verify file exists
+	if _, err := os.Stat(imageFile); os.IsNotExist(err) {
+		return "", "", fmt.Errorf("image file not found: %s", imageFile)
 	}
-	defer devNull.Close()
 
-	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	// Load NBD kernel module
+	if err := LoadNBDModule(); err != nil {
+		return "", "", fmt.Errorf("failed to load NBD module: %w", err)
+	}
 
+	// Disconnect any existing NBD connection
+	RunCommand("sudo", "qemu-nbd", "--disconnect", nbdDevice) // Ignore errors
+
+	// Determine file type and connect to NBD device (case-insensitive extension check)
+	lowerImageFile := strings.ToLower(imageFile)
+	if strings.HasSuffix(lowerImageFile, ".qcow2") {
+		// Connect QCOW2 to NBD device
+		if err := ConnectQCOW2ToNBD(imageFile, nbdDevice); err != nil {
+			return "", "", err
+		}
+	} else if strings.HasSuffix(lowerImageFile, ".vhd") {
+		// Connect VHD to NBD device
+		if err := ConnectVHDToNBD(imageFile, nbdDevice); err != nil {
+			return "", "", err
+		}
+	} else {
+		return "", "", fmt.Errorf("unsupported file type: %s (supported types: .qcow2, .vhd)", imageFile)
+	}
+
+	// Find mountable partition
+	targetPartition, err := FindMountablePartition(nbdDevice)
+	if err != nil {
+		CleanupNBDMount(nbdDevice, "") // mountDir not yet created, pass empty string
+		return "", "", fmt.Errorf("failed to find partition: %w", err)
+	}
+
+	// Create temporary mount directory
+	mountDir, err = os.MkdirTemp("", "kopru-mount-*")
+	if err != nil {
+		CleanupNBDMount(nbdDevice, "") // mountDir creation failed, pass empty string
+		return "", "", fmt.Errorf("failed to create mount directory: %w", err)
+	}
+
+	// Mount the partition
+	if err := MountPartition(targetPartition, mountDir); err != nil {
+		CleanupNBDMount(nbdDevice, mountDir)
+		return "", "", fmt.Errorf("failed to mount partition: %w", err)
+	}
+
+	return mountDir, targetPartition, nil
+}
+
+// MountPartition mounts a partition to a mount point.
+func MountPartition(partition, mountPoint string) error {
+	cmd := exec.Command("sudo", "mount", partition, mountPoint)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to copy data with dd: %w", err)
+		return fmt.Errorf("failed to mount partition: %w", err)
 	}
 
 	return nil
 }
 
-// DetectNewBlockDevice detects a newly attached block device by comparing before and after device lists.
-func DetectNewBlockDevice(beforeDevices []string) (string, error) {
-	// Wait a moment for the new device to appear
-	time.Sleep(3 * time.Second)
-
-	// Get current devices
-	afterDevices, err := listBlockDevices()
-	if err != nil {
-		return "", err
+// UnmountPartition unmounts a mount point.
+func UnmountPartition(mountPoint string) error {
+	cmd := exec.Command("sudo", "umount", mountPoint)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to unmount partition: %w", err)
 	}
 
-	// Find the difference
-	newDevices := difference(afterDevices, beforeDevices)
-	if len(newDevices) == 0 {
-		return "", fmt.Errorf("no new block device detected")
-	}
-
-	// Return the first new device
-	return "/dev/" + newDevices[0], nil
+	return nil
 }
 
-// ListBlockDevices returns a list of current block devices.
-func ListBlockDevices() ([]string, error) {
-	return listBlockDevices()
-}
-
-// listBlockDevices returns a list of block device names (without /dev/ prefix).
-func listBlockDevices() ([]string, error) {
-	cmd := exec.Command("lsblk", "-dn", "-o", "NAME")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list block devices: %w", err)
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var devices []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			devices = append(devices, line)
-		}
-	}
-
-	return devices, nil
-}
-
-// difference returns elements in slice a that are not in slice b.
-func difference(a, b []string) []string {
-	mb := make(map[string]bool, len(b))
-	for _, x := range b {
-		mb[x] = true
-	}
-
-	var diff []string
-	for _, x := range a {
-		if !mb[x] {
-			diff = append(diff, x)
-		}
-	}
-
-	return diff
-}

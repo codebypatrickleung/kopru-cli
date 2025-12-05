@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/codebypatrickleung/kopru-cli/internal/common"
 	"github.com/codebypatrickleung/kopru-cli/internal/config"
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 )
@@ -53,22 +54,27 @@ func (a *CustomConfigurator) ConfigureImage(ctx context.Context, qcow2File strin
 
 	log.Infof("Applying custom configuration script: %s", cfg.CustomOSConfigurationScript)
 
-	// Create image manager for mounting/unmounting
+	// Create image manager for OS configurations
 	manager := NewManager(log, a.sourcePlatform)
 
 	// Mount the QCOW2 image
-	if err := manager.MountQCOW2(qcow2File); err != nil {
+	log.Info("Mounting QCOW2 image using NBD...")
+	mountDir, _, err := common.MountQCOW2Image(qcow2File, "/dev/nbd0")
+	if err != nil {
 		return fmt.Errorf("failed to mount QCOW2 image: %w", err)
 	}
+	log.Successf("Successfully mounted QCOW2 image at %s", mountDir)
+	
+	// Set mount directory in manager for configuration functions to use
+	manager.MountDir = mountDir
 
 	// Ensure cleanup happens
 	defer func() {
-		if cfg.CleanupMount {
-			if err := manager.UnmountQCOW2(); err != nil {
-				log.Warning(fmt.Sprintf("Failed to unmount QCOW2: %v", err))
-			}
+		log.Info("Unmounting QCOW2 image...")
+		if err := common.CleanupNBDMount("/dev/nbd0", mountDir); err != nil {
+			log.Warning(fmt.Sprintf("Failed to unmount QCOW2: %v", err))
 		} else {
-			log.Info("Skipping cleanup of mount and NBD (CLEANUP_MOUNT=false)")
+			log.Success("QCOW2 image unmounted")
 		}
 	}()
 

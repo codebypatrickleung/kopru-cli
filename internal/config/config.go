@@ -4,8 +4,8 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
+	"github.com/codebypatrickleung/kopru-cli/internal/common"
 	"github.com/spf13/viper"
 )
 
@@ -59,7 +59,6 @@ type Config struct {
 	KeepVHD         bool
 	DiskMappingFile string
 	Debug           bool
-	CleanupMount    bool
 }
 
 // Load initializes configuration from file, environment variables, and flags.
@@ -74,7 +73,6 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("template_output_dir", "./template-output")
 	viper.SetDefault("keep_vhd", true)
 	viper.SetDefault("disk_mapping_file", "./disk-mapping.json")
-	viper.SetDefault("cleanup_mount", true)
 
 	// Set environment variable prefix
 	viper.SetEnvPrefix("")
@@ -96,14 +94,14 @@ func Load(configFile string) (*Config, error) {
 	templateOutputDir := viper.GetString("template_output_dir")
 	if templateOutputDir == "./template-output" && azureComputeName != "" {
 		// Import common package for SanitizeName
-		sanitizedName := sanitizeName(azureComputeName)
+		sanitizedName := common.SanitizeName(azureComputeName)
 		templateOutputDir = fmt.Sprintf("./%s%s", sanitizedName, templateOutputSuffix)
 	}
 
 	// Set OCIInstanceName based on Azure Compute name if using default
 	ociInstanceName := viper.GetString("oci_instance_name")
 	if (ociInstanceName == defaultInstanceName || ociInstanceName == "") && azureComputeName != "" {
-		ociInstanceName = sanitizeName(azureComputeName)
+		ociInstanceName = common.SanitizeName(azureComputeName)
 	} else if ociInstanceName == "" {
 		// If no Azure VM name and no explicit OCI instance name, use default
 		ociInstanceName = defaultInstanceName
@@ -112,7 +110,7 @@ func Load(configFile string) (*Config, error) {
 	// Set OCIImageName based on Azure Compute name if using default
 	ociImageName := viper.GetString("oci_image_name")
 	if (ociImageName == defaultImageName || ociImageName == "") && azureComputeName != "" {
-		ociImageName = fmt.Sprintf("%s%s", sanitizeName(azureComputeName), imageSuffix)
+		ociImageName = fmt.Sprintf("%s%s", common.SanitizeName(azureComputeName), imageSuffix)
 	} else if ociImageName == "" {
 		// If no Azure VM name and no explicit OCI image name, use default
 		ociImageName = defaultImageName
@@ -148,7 +146,6 @@ func Load(configFile string) (*Config, error) {
 		KeepVHD:                     viper.GetBool("keep_vhd"),
 		DiskMappingFile:             viper.GetString("disk_mapping_file"),
 		Debug:                       viper.GetBool("debug"),
-		CleanupMount:                viper.GetBool("cleanup_mount"),
 	}
 
 	return cfg, nil
@@ -187,18 +184,4 @@ func (c *Config) Validate() error {
 // It reads from flags, environment variables, and config files in that priority order.
 func LoadConfig() (*Config, error) {
 	return Load("")
-}
-
-// sanitizeName sanitizes a string for use in file/directory names.
-func sanitizeName(name string) string {
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, " ", "-")
-	// Keep only alphanumeric characters, hyphens, and underscores
-	var result strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
 }

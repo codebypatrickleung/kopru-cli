@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/codebypatrickleung/kopru-cli/internal/common"
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 )
 
@@ -17,9 +17,7 @@ type Manager struct {
 	logger         *logger.Logger
 	sourcePlatform string
 	nbdDevice      string
-	mountDir       string
-	isMounted      bool
-	cleanupDone    bool
+	MountDir       string
 }
 
 // NewManager creates a new configuration manager.
@@ -28,88 +26,12 @@ func NewManager(log *logger.Logger, sourcePlatform string) *Manager {
 		logger:         log,
 		sourcePlatform: sourcePlatform,
 		nbdDevice:      "/dev/nbd0",
-		mountDir:       "",
-		isMounted:      false,
-		cleanupDone:    false,
+		MountDir:       "",
 	}
-}
-
-// MountQCOW2 mounts a QCOW2 image using NBD.
-func (m *Manager) MountQCOW2(qcow2File string) error {
-	m.logger.Info("Mounting QCOW2 image using NBD...")
-
-	// Verify file exists
-	if _, err := os.Stat(qcow2File); os.IsNotExist(err) {
-		return fmt.Errorf("QCOW2 file not found: %s", qcow2File)
-	}
-
-	// Generate mount directory with timestamp
-	timestamp := time.Now().Unix()
-	m.mountDir = fmt.Sprintf("/mnt/qcow2-mount-%d", timestamp)
-
-	// Create mount directory
-	if err := os.MkdirAll(m.mountDir, 0755); err != nil {
-		return fmt.Errorf("failed to create mount directory: %w", err)
-	}
-
-	// Load NBD kernel module
-	m.logger.Info("Loading NBD kernel module...")
-	if err := m.runCommand("sudo", "modprobe", "nbd", "max_part=16"); err != nil {
-		return fmt.Errorf("failed to load NBD module: %w", err)
-	}
-
-	// Disconnect any existing NBD connection
-	m.runCommand("sudo", "qemu-nbd", "--disconnect", m.nbdDevice) // Ignore errors
-
-	// Connect QCOW2 to NBD device
-	m.logger.Infof("Connecting QCOW2 image to %s...", m.nbdDevice)
-	if err := m.runCommand("sudo", "qemu-nbd", "--connect="+m.nbdDevice, qcow2File, "-f", "qcow2"); err != nil {
-		os.RemoveAll(m.mountDir)
-		return fmt.Errorf("failed to connect QCOW2 to NBD: %w", err)
-	}
-
-	// Wait for device to be ready (NBD device nodes need time to appear)
-	// This is necessary for the kernel to create partition devices
-	time.Sleep(3 * time.Second)
-
-	// Find root partition
-	partition, err := m.findRootPartition()
-	if err != nil {
-		m.cleanup()
-		return fmt.Errorf("failed to find root partition: %w", err)
-	}
-
-	// Mount the partition
-	m.logger.Infof("Mounting %s to %s...", partition, m.mountDir)
-	if err := m.runCommand("sudo", "mount", partition, m.mountDir); err != nil {
-		m.cleanup()
-		return fmt.Errorf("failed to mount partition: %w", err)
-	}
-
-	m.isMounted = true
-	m.logger.Successf("Successfully mounted QCOW2 image at %s", m.mountDir)
-	return nil
-}
-
-// UnmountQCOW2 unmounts the QCOW2 image and disconnects NBD.
-func (m *Manager) UnmountQCOW2() error {
-	if m.cleanupDone {
-		return nil
-	}
-
-	m.logger.Info("Unmounting QCOW2 image...")
-	m.cleanup()
-	m.cleanupDone = true
-	m.logger.Success("QCOW2 image unmounted")
-	return nil
 }
 
 // ApplyUbuntuConfigurations applies Ubuntu-specific configurations for OCI compatibility.
 func (m *Manager) ApplyUbuntuConfigurations() error {
-	if !m.isMounted {
-		return fmt.Errorf("image not mounted, call MountQCOW2 first")
-	}
-
 	m.logger.Info("Applying Ubuntu configurations for OCI compatibility...")
 
 	// Apply source platform-specific cleanup
@@ -117,33 +39,33 @@ func (m *Manager) ApplyUbuntuConfigurations() error {
 		m.logger.Info("Applying Azure source platform cleanup...")
 
 		// Disable Azure-specific udev rules
-		if err := m.disableAzureUdevRules(); err != nil {
+		if err := m.DisableAzureUdevRules(); err != nil {
 			m.logger.Warning(fmt.Sprintf("Failed to disable Azure udev rules: %v", err))
 		}
 
 		// Disable WALinux Agent
-		if err := m.disableWALinuxAgent(); err != nil {
+		if err := m.DisableAzureLinuxAgent(); err != nil {
 			m.logger.Warning(fmt.Sprintf("Failed to disable WALinux Agent: %v", err))
 		}
 
 		// Disable Azure Linux hosts template
-		if err := m.disableAzureHostsTemplate(); err != nil {
+		if err := m.DisableAzureHostsTemplate(); err != nil {
 			m.logger.Warning(fmt.Sprintf("Failed to disable Azure hosts template: %v", err))
 		}
 
 		// Comment out Azure PTP hyperv refclock in chrony
-		if err := m.commentOutAzureChronyRefclock(); err != nil {
+		if err := m.DisableAzureChronyRefclock(); err != nil {
 			m.logger.Warning(fmt.Sprintf("Failed to comment out Azure chrony refclock: %v", err))
 		}
 	}
 
 	// Configure cloud-init for OCI
-	if err := m.configureCloudInit(); err != nil {
+	if err := m.ConfigureCloudInit(); err != nil {
 		m.logger.Warning(fmt.Sprintf("Failed to configure cloud-init: %v", err))
 	}
 
 	// Update GRUB for OCI console
-	if err := m.updateGRUB(); err != nil {
+	if err := m.UpdateGRUB(); err != nil {
 		m.logger.Warning(fmt.Sprintf("Failed to update GRUB: %v", err))
 	}
 
@@ -153,10 +75,6 @@ func (m *Manager) ApplyUbuntuConfigurations() error {
 
 // ApplyCustomScript executes a custom configuration script.
 func (m *Manager) ApplyCustomScript(scriptPath string) error {
-	if !m.isMounted {
-		return fmt.Errorf("image not mounted, call MountQCOW2 first")
-	}
-
 	m.logger.Infof("Applying custom configuration script: %s", scriptPath)
 
 	// Verify script exists
@@ -170,10 +88,10 @@ func (m *Manager) ApplyCustomScript(scriptPath string) error {
 	}
 
 	// Set environment variable for the script
-	env := append(os.Environ(), fmt.Sprintf("KOPRU_MOUNT_DIR=%s", m.mountDir))
+	env := append(os.Environ(), fmt.Sprintf("KOPRU_MOUNT_DIR=%s", m.MountDir))
 
 	// Execute the script with mount directory as argument
-	cmd := exec.Command(scriptPath, m.mountDir)
+	cmd := exec.Command(scriptPath, m.MountDir)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -186,63 +104,8 @@ func (m *Manager) ApplyCustomScript(scriptPath string) error {
 	return nil
 }
 
-// Helper methods
-
-func (m *Manager) cleanup() {
-	// Unmount if mounted
-	if m.isMounted && m.mountDir != "" {
-		if err := m.runCommand("sudo", "umount", m.mountDir); err != nil {
-			m.logger.Warning(fmt.Sprintf("Failed to unmount %s: %v", m.mountDir, err))
-		}
-		m.isMounted = false
-	}
-
-	// Disconnect NBD
-	if err := m.runCommand("sudo", "qemu-nbd", "--disconnect", m.nbdDevice); err != nil {
-		m.logger.Warning(fmt.Sprintf("Failed to disconnect NBD device %s: %v", m.nbdDevice, err))
-	}
-
-	// Remove mount directory
-	if m.mountDir != "" {
-		if err := os.RemoveAll(m.mountDir); err != nil {
-			m.logger.Warning(fmt.Sprintf("Failed to remove mount directory %s: %v", m.mountDir, err))
-		}
-	}
-}
-
-func (m *Manager) runCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("command failed: %s, output: %s", err, string(output))
-	}
-	return nil
-}
-
-func (m *Manager) findRootPartition() (string, error) {
-	// List partitions on NBD device
-	cmd := exec.Command("lsblk", "-ln", "-o", "NAME,SIZE,TYPE,FSTYPE", m.nbdDevice)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to list partitions: %w", err)
-	}
-
-	// Parse output to find ext4/xfs partition
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) >= 4 && fields[2] == "part" {
-			fsType := fields[3]
-			if fsType == "ext4" || fsType == "xfs" || fsType == "ext3" {
-				return "/dev/" + fields[0], nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("no suitable root partition found")
-}
-
-func (m *Manager) disableAzureUdevRules() error {
+// DisableAzureUdevRules disables Azure-specific udev rules.
+func (m *Manager) DisableAzureUdevRules() error {
 	m.logger.Info("Disabling Azure-specific udev rules...")
 
 	azureRules := []string{
@@ -251,7 +114,7 @@ func (m *Manager) disableAzureUdevRules() error {
 	}
 
 	for _, rule := range azureRules {
-		rulePath := filepath.Join(m.mountDir, "etc/udev/rules.d", rule)
+		rulePath := filepath.Join(m.MountDir, "etc/udev/rules.d", rule)
 		disabledPath := rulePath + ".disable"
 		if _, err := os.Stat(rulePath); err == nil {
 			if err := os.Rename(rulePath, disabledPath); err != nil {
@@ -265,10 +128,11 @@ func (m *Manager) disableAzureUdevRules() error {
 	return nil
 }
 
-func (m *Manager) disableAzureHostsTemplate() error {
+// DisableAzureHostsTemplate disables the Azure hosts template.
+func (m *Manager) DisableAzureHostsTemplate() error {
 	m.logger.Info("Disabling Azure hosts template...")
 
-	hostsTemplatePath := filepath.Join(m.mountDir, "etc/cloud/templates/hosts.azurelinux.tmpl")
+	hostsTemplatePath := filepath.Join(m.MountDir, "etc/cloud/templates/hosts.azurelinux.tmpl")
 	
 	// Check if the file exists
 	if _, err := os.Stat(hostsTemplatePath); os.IsNotExist(err) {
@@ -296,7 +160,7 @@ func (m *Manager) disableAzureHostsTemplate() error {
 	}
 	updated += "disable\n"
 
-	if err := m.writeFile(hostsTemplatePath, updated); err != nil {
+	if err := common.WriteFile(hostsTemplatePath, updated); err != nil {
 		return fmt.Errorf("failed to update hosts template: %w", err)
 	}
 
@@ -304,10 +168,11 @@ func (m *Manager) disableAzureHostsTemplate() error {
 	return nil
 }
 
-func (m *Manager) commentOutAzureChronyRefclock() error {
+// DisableAzureChronyRefclock comments out Azure PTP hyperv refclock in chrony config.
+func (m *Manager) DisableAzureChronyRefclock() error {
 	m.logger.Info("Commenting out Azure PTP hyperv refclock in chrony config...")
 
-	chronyConfPath := filepath.Join(m.mountDir, "etc/chrony/chrony.conf")
+	chronyConfPath := filepath.Join(m.MountDir, "etc/chrony/chrony.conf")
 	
 	// Check if the file exists
 	if _, err := os.Stat(chronyConfPath); os.IsNotExist(err) {
@@ -358,7 +223,7 @@ func (m *Manager) commentOutAzureChronyRefclock() error {
 		m.logger.Info("✓ Added OCI time server to chrony config")
 	}
 
-	if err := m.writeFile(chronyConfPath, updated); err != nil {
+	if err := common.WriteFile(chronyConfPath, updated); err != nil {
 		return fmt.Errorf("failed to update chrony config: %w", err)
 	}
 
@@ -366,19 +231,49 @@ func (m *Manager) commentOutAzureChronyRefclock() error {
 	return nil
 }
 
-func (m *Manager) configureCloudInit() error {
+// DisableAzureLinuxAgent disables the WALinux Agent.
+func (m *Manager) DisableAzureLinuxAgent() error {
+	m.logger.Info("Disabling WALinux Agent files...")
+
+	waagentPaths := []string{
+		"/var/lib/waagent",
+		"/etc/init/walinuxagent.conf",
+		"/etc/init.d/walinuxagent",
+		"/usr/sbin/waagent",
+		"/usr/sbin/waagent2.0",
+		"/etc/waagent.conf",
+		"/var/log/waagent.log",
+	}
+
+	for _, path := range waagentPaths {
+		fullPath := filepath.Join(m.MountDir, path)
+		disabledPath := fullPath + ".disable"
+		if _, err := os.Stat(fullPath); err == nil {
+			if err := os.Rename(fullPath, disabledPath); err != nil {
+				m.logger.Warning(fmt.Sprintf("Failed to disable %s: %v", path, err))
+			} else {
+				m.logger.Successf("✓ Disabled %s", path)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ConfigureCloudInit configures cloud-init for OCI.
+func (m *Manager) ConfigureCloudInit() error {
 	m.logger.Info("Configuring cloud-init for OCI...")
 
-	ociCfgPath := filepath.Join(m.mountDir, "etc/cloud/cloud.cfg.d/99_oci.cfg")
+	ociCfgPath := filepath.Join(m.MountDir, "etc/cloud/cloud.cfg.d/99_oci.cfg")
 
 	// Create cloud.cfg.d directory if it doesn't exist
-	cloudCfgDir := filepath.Join(m.mountDir, "etc/cloud/cloud.cfg.d")
+	cloudCfgDir := filepath.Join(m.MountDir, "etc/cloud/cloud.cfg.d")
 	if err := os.MkdirAll(cloudCfgDir, 0755); err != nil {
 		return err
 	}
 
 	content := "datasource_list: [Oracle, None]\n"
-	if err := m.writeFile(ociCfgPath, content); err != nil {
+	if err := common.WriteFile(ociCfgPath, content); err != nil {
 		return err
 	}
 
@@ -390,7 +285,7 @@ func (m *Manager) configureCloudInit() error {
 	}
 
 	for _, file := range azureFiles {
-		filePath := filepath.Join(m.mountDir, "etc/cloud/cloud.cfg.d", file)
+		filePath := filepath.Join(m.MountDir, "etc/cloud/cloud.cfg.d", file)
 		disabledPath := filePath + ".disable"
 		if _, err := os.Stat(filePath); err == nil {
 			if err := os.Rename(filePath, disabledPath); err != nil {
@@ -405,38 +300,11 @@ func (m *Manager) configureCloudInit() error {
 	return nil
 }
 
-func (m *Manager) disableWALinuxAgent() error {
-	m.logger.Info("Disabling WALinux Agent files...")
-
-	waagentPaths := []string{
-		"/var/lib/waagent",
-		"/etc/init/walinuxagent.conf",
-		"/etc/init.d/walinuxagent",
-		"/usr/sbin/waagent",
-		"/usr/sbin/waagent2.0",
-		"/etc/waagent.conf",
-		"/var/log/waagent.log",
-	}
-
-	for _, path := range waagentPaths {
-		fullPath := filepath.Join(m.mountDir, path)
-		disabledPath := fullPath + ".disable"
-		if _, err := os.Stat(fullPath); err == nil {
-			if err := os.Rename(fullPath, disabledPath); err != nil {
-				m.logger.Warning(fmt.Sprintf("Failed to disable %s: %v", path, err))
-			} else {
-				m.logger.Successf("✓ Disabled %s", path)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (m *Manager) updateGRUB() error {
+// UpdateGRUB updates GRUB configuration for OCI serial console.
+func (m *Manager) UpdateGRUB() error {
 	m.logger.Info("Updating GRUB for OCI serial console...")
 
-	grubPath := filepath.Join(m.mountDir, "etc/default/grub")
+	grubPath := filepath.Join(m.MountDir, "etc/default/grub")
 	if _, err := os.Stat(grubPath); os.IsNotExist(err) {
 		m.logger.Info("GRUB config not found, skipping...")
 		return nil
@@ -486,41 +354,10 @@ func (m *Manager) updateGRUB() error {
 	}
 
 	updated := strings.Join(lines, "\n")
-	if err := m.writeFile(grubPath, updated); err != nil {
+	if err := common.WriteFile(grubPath, updated); err != nil {
 		return err
 	}
 
 	m.logger.Success("✓ Updated GRUB console configuration")
-	return nil
-}
-
-func (m *Manager) writeFile(path, content string) error {
-	// Create a temporary file securely
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), ".kopru-tmp-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-
-	// Write content and close
-	if _, err := tmpFile.WriteString(content); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Set appropriate permissions
-	if err := os.Chmod(tmpPath, 0644); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to set permissions: %w", err)
-	}
-
-	// Move the file using sudo
-	if err := m.runCommand("sudo", "mv", tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to move temp file: %w", err)
-	}
-
 	return nil
 }

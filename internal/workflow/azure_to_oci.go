@@ -212,8 +212,11 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 
 	// Check disk space (at least 100GB recommended)
 	h.logger.Info("Checking disk space...")
-	if err := common.CheckDiskSpace(".", common.MinDiskSpaceGB); err != nil {
+	availableBytes, err := common.GetAvailableDiskSpace(".", common.MinDiskSpaceGB)
+	if err != nil {
 		h.logger.Warning(fmt.Sprintf("Disk space check: %v", err))
+	} else {
+		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}
 
 	// Azure prerequisites
@@ -312,7 +315,7 @@ func (h *AzureToOCIHandler) convertDisk(ctx context.Context) error {
 
 	// Find the VHD file
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	vhdFile, err := common.FindVHDFile(exportDir)
+	vhdFile, err := common.FindDiskFile(exportDir, ".vhd")
 	if err != nil {
 		return fmt.Errorf("failed to find VHD file: %w", err)
 	}
@@ -342,7 +345,7 @@ func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 
 	// Find the QCOW2 file
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindQCOW2File(exportDir)
+	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -376,7 +379,7 @@ func (h *AzureToOCIHandler) uploadImage(ctx context.Context) error {
 
 	// Find the QCOW2 file
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindQCOW2File(exportDir)
+	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -417,7 +420,7 @@ func (h *AzureToOCIHandler) importImage(ctx context.Context) error {
 
 	// Find the QCOW2 file to get object name
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindQCOW2File(exportDir)
+	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -556,42 +559,14 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 		h.logger.Info("=========================================")
 
 		nbdDevice := "/dev/nbd0"
-		mountDir := ""
 
 		// Mount the VHD file using NBD
 		h.logger.Infof("Connecting VHD image to %s...", nbdDevice)
-		if err := common.ConnectVHDToNBD(vhdFile, nbdDevice); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to connect VHD to NBD: %v", err))
-			failedCount++
-			continue
-		}
-
-		// List partitions for debugging
 		h.logger.Infof("Detecting partitions on %s...", nbdDevice)
 
-		// Find a mountable partition
-		targetPartition, err := common.FindMountablePartition(nbdDevice)
+		mountDir, targetPartition, err := common.MountQCOW2Image(vhdFile, nbdDevice)
 		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Could not find mountable partition: %v", err))
-			common.CleanupNBDMount(nbdDevice, "")
-			failedCount++
-			continue
-		}
-
-		// Create temporary mount directory
-		mountDir, err = os.MkdirTemp("", "kopru-mount-*")
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to create mount directory: %v", err))
-			common.CleanupNBDMount(nbdDevice, "")
-			failedCount++
-			continue
-		}
-
-		// Mount the partition
-		h.logger.Infof("Mounting %s to %s...", targetPartition, mountDir)
-		if err := common.MountPartition(targetPartition, mountDir); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to mount partition: %v", err))
-			common.CleanupNBDMount(nbdDevice, mountDir)
+			h.logger.Warning(fmt.Sprintf("Failed to mount VHD: %v", err))
 			failedCount++
 			continue
 		}
@@ -768,14 +743,14 @@ func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
 
 	if !h.config.SkipExport {
-		vhdFile, err := common.FindVHDFile(exportDir)
+		vhdFile, err := common.FindDiskFile(exportDir, ".vhd")
 		if err == nil {
 			h.logger.Successf("✓ VHD file exists: %s", filepath.Base(vhdFile))
 		}
 	}
 
 	if !h.config.SkipConvert {
-		qcow2File, err := common.FindQCOW2File(exportDir)
+		qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
 		if err == nil {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
