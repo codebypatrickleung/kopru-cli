@@ -13,7 +13,6 @@ import (
 	"github.com/codebypatrickleung/kopru-cli/internal/common"
 	"github.com/codebypatrickleung/kopru-cli/internal/config"
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
-	ospackage "github.com/codebypatrickleung/kopru-cli/internal/os"
 	"github.com/codebypatrickleung/kopru-cli/internal/template"
 )
 
@@ -359,15 +358,39 @@ func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 		h.logger.Infof("Using default OS type: %s", osType)
 	}
 
-	// Get OS configurator for the source platform and target platform
-	configurator, err := ospackage.GetConfigurator(h.SourcePlatform(), h.TargetPlatform(), osType)
+	// Mount the QCOW2 image
+	h.logger.Info("Mounting QCOW2 image using NBD...")
+	mountDir, _, err := common.MountQCOW2Image(qcow2File, "/dev/nbd0")
 	if err != nil {
-		return fmt.Errorf("failed to get OS configurator: %w", err)
+		return fmt.Errorf("failed to mount QCOW2 image: %w", err)
 	}
+	h.logger.Successf("Successfully mounted QCOW2 image at %s", mountDir)
 
-	// Apply configurations
-	if err := configurator.ConfigureImage(ctx, qcow2File, h.logger, h.config); err != nil {
-		return fmt.Errorf("failed to configure image: %w", err)
+	// Ensure cleanup happens
+	defer func() {
+		h.logger.Info("Unmounting QCOW2 image...")
+		if err := common.CleanupNBDMount("/dev/nbd0", mountDir); err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to unmount QCOW2: %v", err))
+		} else {
+			h.logger.Success("QCOW2 image unmounted")
+		}
+	}()
+
+	// Execute OS configuration script based on OS type
+	h.logger.Info("Applying OS configurations...")
+	if osType == common.CustomOSType {
+		// Use custom script provided by user
+		if h.config.CustomOSConfigurationScript == "" {
+			return fmt.Errorf("custom OS configuration script required when OCI_IMAGE_OS=CUSTOM")
+		}
+		if err := common.ExecuteCustomOSConfigScript(mountDir, h.config.CustomOSConfigurationScript, h.logger); err != nil {
+			return fmt.Errorf("failed to execute custom OS configuration script: %w", err)
+		}
+	} else {
+		// Use built-in script based on OS type and source platform
+		if err := common.ExecuteOSConfigScript(mountDir, osType, h.SourcePlatform(), h.logger); err != nil {
+			return fmt.Errorf("failed to execute OS configuration script: %w", err)
+		}
 	}
 
 	h.logger.Success("Image configurations complete")

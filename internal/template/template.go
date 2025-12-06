@@ -12,10 +12,7 @@ import (
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 )
 
-const (
-	// DefaultAvailabilityDomain is the default availability domain when not specified
-	DefaultAvailabilityDomain = "1"
-)
+const DefaultAvailabilityDomain = "1"
 
 // OCIGenerator handles template generation for OCI.
 type OCIGenerator struct {
@@ -27,7 +24,7 @@ type OCIGenerator struct {
 }
 
 // NewOCIGenerator creates a new OCI template generator.
-func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs []string, dataDiskSnapshotNames []string) *OCIGenerator {
+func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string) *OCIGenerator {
 	return &OCIGenerator{
 		config:                cfg,
 		logger:                log,
@@ -37,103 +34,74 @@ func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID str
 	}
 }
 
-// formatTemplateList converts a string slice to template list format
+// formatTemplateList converts a string slice to template list format.
 func formatTemplateList(items []string) string {
 	if len(items) == 0 {
 		return "[]"
 	}
-
-	var result strings.Builder
-	result.WriteString("[\n")
+	var b strings.Builder
+	b.WriteString("[\n")
 	for i, item := range items {
-		result.WriteString(fmt.Sprintf("  \"%s\"", item))
+		b.WriteString(fmt.Sprintf("  \"%s\"", item))
 		if i < len(items)-1 {
-			result.WriteString(",\n")
+			b.WriteString(",\n")
 		} else {
-			result.WriteString("\n")
+			b.WriteString("\n")
 		}
 	}
-	result.WriteString("]")
-	return result.String()
+	b.WriteString("]")
+	return b.String()
 }
 
 // GenerateTemplate generates all template configuration files.
 func (g *OCIGenerator) GenerateTemplate() error {
-	// Create template output directory
 	if err := common.EnsureDir(g.config.TemplateOutputDir); err != nil {
 		return fmt.Errorf("failed to create template output directory: %w", err)
 	}
-
 	g.logger.Infof("Generating template files in: %s", g.config.TemplateOutputDir)
 
-	// Generate provider.tf
-	if err := g.generateProviderTF(); err != nil {
-		return fmt.Errorf("failed to generate provider.tf: %w", err)
+	generators := []func() error{
+		g.generateProviderTF,
+		g.generateVariablesTF,
+		g.generateMainTF,
+		g.generateOutputsTF,
+		g.generateTFVars,
+		g.generateReadme,
 	}
-
-	// Generate variables.tf
-	if err := g.generateVariablesTF(); err != nil {
-		return fmt.Errorf("failed to generate variables.tf: %w", err)
+	for _, gen := range generators {
+		if err := gen(); err != nil {
+			return err
+		}
 	}
-
-	// Generate main.tf
-	if err := g.generateMainTF(); err != nil {
-		return fmt.Errorf("failed to generate main.tf: %w", err)
-	}
-
-	// Generate outputs.tf
-	if err := g.generateOutputsTF(); err != nil {
-		return fmt.Errorf("failed to generate outputs.tf: %w", err)
-	}
-
-	// Generate terraform.tfvars
-	if err := g.generateTFVars(); err != nil {
-		return fmt.Errorf("failed to generate terraform.tfvars: %w", err)
-	}
-
-	// Generate README.md
-	if err := g.generateReadme(); err != nil {
-		return fmt.Errorf("failed to generate README.md: %w", err)
-	}
-
 	g.logger.Successf("Template generated in %s", g.config.TemplateOutputDir)
 	return nil
 }
 
 // DeployTemplate executes OpenTofu commands to deploy the infrastructure.
 func (g *OCIGenerator) DeployTemplate() error {
-	// Check if tofu is available
 	if err := common.CheckCommand("tofu"); err != nil {
 		return fmt.Errorf("tofu not found: %w", err)
 	}
+	dir := g.config.TemplateOutputDir
 
-	templateDir := g.config.TemplateOutputDir
-
-	// Initialize OpenTofu
-	g.logger.Info("Running tofu init...")
-	output, err := common.RunCommand("tofu", "-chdir="+templateDir, "init")
-	if err != nil {
-		return fmt.Errorf("tofu init failed: %w\nOutput: %s", err, output)
+	steps := []struct {
+		msg    string
+		args   []string
+		succ   string
+	}{
+		{"Running tofu init...", []string{"-chdir=" + dir, "init"}, "✓ OpenTofu initialized"},
+		{"Running tofu plan...", []string{"-chdir=" + dir, "plan", "-out=tfplan"}, "✓ OpenTofu plan created"},
+		{"Running tofu apply (this may take several minutes)...", []string{"-chdir=" + dir, "apply", "-auto-approve", "tfplan"}, "Instance deployed with OpenTofu"},
 	}
-	g.logger.Success("✓ OpenTofu initialized")
-
-	// Run tofu plan
-	g.logger.Info("Running tofu plan...")
-	output, err = common.RunCommand("tofu", "-chdir="+templateDir, "plan", "-out=tfplan")
-	if err != nil {
-		return fmt.Errorf("tofu plan failed: %w\nOutput: %s", err, output)
+	for _, step := range steps {
+		g.logger.Info(step.msg)
+		out, err := common.RunCommand("tofu", step.args...)
+		if err != nil {
+			return fmt.Errorf("%s failed: %w\nOutput: %s", strings.Fields(step.msg)[1], err, out)
+		}
+		g.logger.Success(step.succ)
 	}
-	g.logger.Success("✓ OpenTofu plan created")
-
-	// Run tofu apply
-	g.logger.Info("Running tofu apply (this may take several minutes)...")
-	output, err = common.RunCommand("tofu", "-chdir="+templateDir, "apply", "-auto-approve", "tfplan")
-	if err != nil {
-		return fmt.Errorf("tofu apply failed: %w\nOutput: %s", err, output)
-	}
-
-	g.logger.Success("Instance deployed with OpenTofu")
-	g.logger.Infof("Run 'tofu output' in %s to see instance details", templateDir)
+	g.logger.Infof("Run 'tofu output' in %s to see instance details", dir)
 	return nil
 }
 
@@ -147,16 +115,14 @@ func (g *OCIGenerator) generateProviderTF() error {
 
 terraform {
   required_version = ">= 1.0.0"
-  
   required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = ">= 5.0.0"
-    }
+	oci = {
+	  source  = "oracle/oci"
+	  version = ">= 5.0.0"
+	}
   }
 }
 
-# OCI Provider - uses default configuration from ~/.oci/config or environment variables
 provider "oci" {
   region = var.region
 }
@@ -167,10 +133,6 @@ provider "oci" {
 func (g *OCIGenerator) generateVariablesTF() error {
 	content := `# --------------------------------------------------------------------------------------------
 # Variable Definitions for OCI Instance Deployment
-# --------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------
-# Required Variables
 # --------------------------------------------------------------------------------------------
 
 variable "compartment_id" {
@@ -193,10 +155,6 @@ variable "instance_ad_number" {
   type        = number
   default     = 1
 }
-
-# --------------------------------------------------------------------------------------------
-# Instance Configuration
-# --------------------------------------------------------------------------------------------
 
 variable "instance_name" {
   description = "Display name for the OCI instance"
@@ -228,19 +186,11 @@ variable "assign_public_ip" {
   default     = true
 }
 
-# --------------------------------------------------------------------------------------------
-# Region Configuration
-# --------------------------------------------------------------------------------------------
-
 variable "region" {
   description = "OCI region"
   type        = string
   default     = "eu-frankfurt-1"
 }
-
-# --------------------------------------------------------------------------------------------
-# Data Disk Snapshots
-# --------------------------------------------------------------------------------------------
 
 variable "data_disk_snapshot_ids" {
   description = "List of block volume backup (snapshot) OCIDs to restore as data disks"
@@ -254,15 +204,11 @@ variable "data_disk_names" {
   default     = []
 }
 
-# --------------------------------------------------------------------------------------------
-# Tags
-# --------------------------------------------------------------------------------------------
-
 variable "freeform_tags" {
   description = "Freeform tags for resources"
   type        = map(string)
   default = {
-    "created-by" = "kopru"
+	"created-by" = "kopru"
   }
 }
 `
@@ -273,33 +219,18 @@ func (g *OCIGenerator) generateMainTF() error {
 	content := `# --------------------------------------------------------------------------------------------
 # OCI Instance Configuration
 # --------------------------------------------------------------------------------------------
-# This file defines the OCI compute instance and associated resources.
-# --------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------
-# Locals
-# --------------------------------------------------------------------------------------------
 
 locals {
-  # Generate volume names from provided list or use default naming
   data_volume_names = [
-    for idx in range(length(var.data_disk_snapshot_ids)) :
-    length(var.data_disk_names) > idx ? var.data_disk_names[idx] : "restored-data-disk-${idx}"
+	for idx in range(length(var.data_disk_snapshot_ids)) :
+	length(var.data_disk_names) > idx ? var.data_disk_names[idx] : "restored-data-disk-${idx}"
   ]
 }
-
-# --------------------------------------------------------------------------------------------
-# Data
-# --------------------------------------------------------------------------------------------
 
 data "oci_identity_availability_domain" "ad" {
   compartment_id = var.compartment_id
   ad_number      = var.instance_ad_number
 }
-
-# --------------------------------------------------------------------------------------------
-# Compute Instance
-# --------------------------------------------------------------------------------------------
 
 resource "oci_core_instance" "kopru_instance" {
   compartment_id      = var.compartment_id
@@ -307,70 +238,51 @@ resource "oci_core_instance" "kopru_instance" {
   display_name        = var.instance_name
   shape               = var.instance_shape
 
-  # Flex shape configuration
   dynamic "shape_config" {
-    for_each = can(regex("Flex", var.instance_shape)) ? [1] : []
-    content {
-      ocpus         = var.instance_ocpus
-      memory_in_gbs = var.instance_memory_gb
-    }
+	for_each = can(regex("Flex", var.instance_shape)) ? [1] : []
+	content {
+	  ocpus         = var.instance_ocpus
+	  memory_in_gbs = var.instance_memory_gb
+	}
   }
 
-  # Use the imported custom image
   source_details {
-    source_type = "image"
-    source_id   = var.image_id
+	source_type = "image"
+	source_id   = var.image_id
   }
 
-  # Network configuration
   create_vnic_details {
-    subnet_id        = var.subnet_id
-    assign_public_ip = var.assign_public_ip
-    display_name     = "${var.instance_name}-vnic"
+	subnet_id        = var.subnet_id
+	assign_public_ip = var.assign_public_ip
+	display_name     = "${var.instance_name}-vnic"
   }
 
-  # Lifecycle configuration
-  # Note: prevent_destroy is set to false to allow Terraform destroy operations
-  # Set to true in production environments to prevent accidental deletion
   lifecycle {
-    prevent_destroy = false
+	prevent_destroy = false
   }
 
   freeform_tags = var.freeform_tags
 }
 
-# --------------------------------------------------------------------------------------------
-# Block Volumes from Snapshots
-# --------------------------------------------------------------------------------------------
-
-# Create block volumes from snapshots
 resource "oci_core_volume" "data_volumes" {
   count = length(var.data_disk_snapshot_ids)
-
   compartment_id      = var.compartment_id
   availability_domain = data.oci_identity_availability_domain.ad.name
   display_name        = local.data_volume_names[count.index]
-  
-  # Restore from snapshot (volume backup)
   source_details {
-    type = "volumeBackup"
-    id   = var.data_disk_snapshot_ids[count.index]
+	type = "volumeBackup"
+	id   = var.data_disk_snapshot_ids[count.index]
   }
-
   freeform_tags = var.freeform_tags
 }
 
-# Attach block volumes to the instance
 resource "oci_core_volume_attachment" "data_volume_attachments" {
   count = length(var.data_disk_snapshot_ids)
-
   attachment_type = "paravirtualized"
   instance_id     = oci_core_instance.kopru_instance.id
   volume_id       = oci_core_volume.data_volumes[count.index].id
   display_name    = "attachment-${local.data_volume_names[count.index]}"
-
-  # Wait for instance to be available before attaching volumes
-  depends_on = [oci_core_instance.kopru_instance]
+  depends_on      = [oci_core_instance.kopru_instance]
 }
 `
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "main.tf"), []byte(content), 0644)
@@ -419,9 +331,9 @@ output "data_volume_attachment_ids" {
 output "ssh_connection" {
   description = "SSH connection string"
   value = (
-    oci_core_instance.kopru_instance.public_ip != null
-    ? "ssh -i <private-key-file> <user>@${oci_core_instance.kopru_instance.public_ip}"
-    : "ssh -i <private-key-file> <user>@${oci_core_instance.kopru_instance.private_ip}"
+	oci_core_instance.kopru_instance.public_ip != null
+	? "ssh -i <private-key-file> <user>@${oci_core_instance.kopru_instance.public_ip}"
+	: "ssh -i <private-key-file> <user>@${oci_core_instance.kopru_instance.private_ip}"
   )
 }
 `
@@ -429,26 +341,20 @@ output "ssh_connection" {
 }
 
 func (g *OCIGenerator) generateTFVars() error {
-	// Get availability domain
 	ad := g.config.OCIAvailabilityDomain
 	if ad == "" {
 		ad = DefaultAvailabilityDomain
 	}
-
-	// Use the imported image ID if available, otherwise use placeholder
 	imageID := "REPLACE_WITH_IMPORTED_IMAGE_OCID"
 	imageIDComment := ""
 	if g.importedImageID != "" {
 		imageID = g.importedImageID
 	} else {
-		// Add comment about how to find the image OCID
 		imageIDComment = fmt.Sprintf(`# IMPORTANT: Replace the placeholder below with the actual image OCID after import completes
 # You can find the image OCID in the OCI console or by running:
 #   oci compute image list --compartment-id %s --display-name "%s"
 `, g.config.OCICompartmentID, g.config.OCIImageName)
 	}
-
-	// Format data disk snapshot IDs and names as template lists
 	snapshotIDsList := formatTemplateList(g.dataDiskSnapshotIDs)
 	snapshotNamesList := formatTemplateList(g.dataDiskSnapshotNames)
 
@@ -459,27 +365,22 @@ func (g *OCIGenerator) generateTFVars() error {
 # Modify these values as needed before deployment
 # --------------------------------------------------------------------------------------------
 
-# Required Configuration
 compartment_id      = "%s"
 subnet_id           = "%s"
 %simage_id            = "%s"
-instance_ad_number = "%s"
+instance_ad_number  = "%s"
 
-# Instance Configuration
 instance_name      = "%s"
 instance_shape     = "VM.Standard.E5.Flex"
 instance_ocpus     = 1
 instance_memory_gb = 12
 assign_public_ip   = true
 
-# Region Configuration
 region = "%s"
 
-# Data Disk Snapshots (restored as block volumes and attached to instance)
 data_disk_snapshot_ids = %s
 data_disk_names        = %s
 
-# Tags
 freeform_tags = {
   "created-by"    = "kopru"
   "source-image"  = "%s"
@@ -496,7 +397,6 @@ freeform_tags = {
 		snapshotNamesList,
 		imageID,
 	)
-
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "terraform.tfvars"), []byte(content), 0644)
 }
 
@@ -584,3 +484,4 @@ tofu destroy
 `
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "README.md"), []byte(content), 0644)
 }
+

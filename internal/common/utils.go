@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -17,7 +19,7 @@ const (
 	MinDiskSpaceGB = 100
 )
 
-// CheckCommand checks if a command is available in the system PATH.
+// CheckCommand returns an error if the command is not found in PATH.
 func CheckCommand(cmd string) error {
 	_, err := exec.LookPath(cmd)
 	if err != nil {
@@ -26,8 +28,7 @@ func CheckCommand(cmd string) error {
 	return nil
 }
 
-// RunCommand executes a command and returns the output and error.
-// If the command fails, the error will include both the error and the command output.
+// RunCommand executes a command and returns its output and error.
 func RunCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
@@ -37,26 +38,20 @@ func RunCommand(name string, args ...string) (string, error) {
 	return string(output), nil
 }
 
-// SanitizeName sanitizes a string for use in file/directory names.
+// SanitizeName returns a lowercase, safe string for file/directory names.
 func SanitizeName(name string) string {
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, " ", "-")
-	// Keep only alphanumeric characters, hyphens, and underscores
-	var result strings.Builder
-	for _, r := range name {
+	name = strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			result.WriteRune(r)
+			return r
 		}
-	}
-	return result.String()
+		return -1
+	}, name)
 }
 
 // EnsureDir creates a directory if it doesn't exist.
 func EnsureDir(path string) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return os.MkdirAll(path, 0755)
-	}
-	return nil
+	return os.MkdirAll(path, 0755)
 }
 
 // FindDiskFile finds the first file with the specified extension in the directory.
@@ -72,49 +67,23 @@ func FindDiskFile(dir string, extension string) (string, error) {
 	return files[0], nil
 }
 
-// GetAvailableDiskSpace returns the available disk space in bytes for the given path.
-// If minDiskSpaceGB is greater than 0, it also checks if available space meets the minimum requirement.
+// GetAvailableDiskSpace returns the available disk space in bytes for the given path using unix.Statfs.
 func GetAvailableDiskSpace(path string, minDiskSpaceGB int64) (int64, error) {
-	// Get the absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get absolute path: %w", err)
 	}
-
-	// Use df command to get disk space
-	cmd := exec.Command("df", "-B1", absPath)
-	output, err := cmd.Output()
-	if err != nil {
+	var stat unix.Statfs_t
+	if err := unix.Statfs(absPath, &stat); err != nil {
 		return 0, fmt.Errorf("failed to get disk space: %w", err)
 	}
-
-	// Parse df output
-	lines := strings.Split(string(output), "\n")
-	if len(lines) < 2 {
-		return 0, fmt.Errorf("unexpected df output format")
-	}
-
-	// The second line contains the disk space information
-	fields := strings.Fields(lines[1])
-	if len(fields) < 4 {
-		return 0, fmt.Errorf("unexpected df output format")
-	}
-
-	// The fourth field is the available space
-	var available int64
-	_, err = fmt.Sscanf(fields[3], "%d", &available)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse available disk space: %w", err)
-	}
-
-	// If minimum disk space is specified, check if available space is sufficient
+	available := int64(stat.Bavail) * int64(stat.Bsize)
 	if minDiskSpaceGB > 0 {
 		availableGB := available / (1024 * 1024 * 1024)
 		if availableGB < minDiskSpaceGB {
 			return available, fmt.Errorf("insufficient disk space: %d GB available, %d GB recommended", availableGB, minDiskSpaceGB)
 		}
 	}
-
 	return available, nil
 }
 
@@ -198,52 +167,24 @@ func CopyDataWithDD(source, destination string) error {
 
 // SliceDifference returns elements in slice a that are not in slice b.
 func SliceDifference(a, b []string) []string {
-	mb := make(map[string]bool, len(b))
+	mb := make(map[string]struct{}, len(b))
 	for _, x := range b {
-		mb[x] = true
+		mb[x] = struct{}{}
 	}
-
 	var diff []string
 	for _, x := range a {
-		if !mb[x] {
+		if _, found := mb[x]; !found {
 			diff = append(diff, x)
 		}
 	}
-
 	return diff
 }
 
-// HasFilesystem checks if a device has a recognizable filesystem.
+// HasFilesystem returns true if blkid detects a filesystem on the device.
 func HasFilesystem(device string) bool {
 	cmd := exec.Command("sudo", "blkid", device)
 	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-
-	// If blkid returns output, it has a filesystem
-	return len(output) > 0
-}
-
-// DetectNewBlockDevice detects a newly attached block device by comparing before and after device lists.
-func DetectNewBlockDevice(beforeDevices []string) (string, error) {
-	// Wait a moment for the new device to appear
-	time.Sleep(3 * time.Second)
-
-	// Get current devices
-	afterDevices, err := ListBlockDevices()
-	if err != nil {
-		return "", err
-	}
-
-	// Find the difference
-	newDevices := SliceDifference(afterDevices, beforeDevices)
-	if len(newDevices) == 0 {
-		return "", fmt.Errorf("no new block device detected")
-	}
-
-	// Return the first new device
-	return "/dev/" + newDevices[0], nil
+	return err == nil && len(output) > 0
 }
 
 // ListBlockDevices returns a list of block device names (without /dev/ prefix).
@@ -253,7 +194,6 @@ func ListBlockDevices() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list block devices: %w", err)
 	}
-
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var devices []string
 	for _, line := range lines {
@@ -262,32 +202,37 @@ func ListBlockDevices() ([]string, error) {
 			devices = append(devices, line)
 		}
 	}
-
 	return devices, nil
 }
 
-// ConvertVHDToQCOW2 converts a VHD file to QCOW2 format.
-// It finds the VHD file in the specified directory, converts it using qemu-img,
-// and optionally removes the VHD file after conversion.
+// DetectNewBlockDevice detects a newly attached block device by comparing before and after device lists.
+func DetectNewBlockDevice(beforeDevices []string) (string, error) {
+	time.Sleep(3 * time.Second)
+	afterDevices, err := ListBlockDevices()
+	if err != nil {
+		return "", err
+	}
+	newDevices := SliceDifference(afterDevices, beforeDevices)
+	if len(newDevices) == 0 {
+		return "", fmt.Errorf("no new block device detected")
+	}
+	return "/dev/" + newDevices[0], nil
+}
+
+// ConvertVHDToQCOW2 converts a VHD file to QCOW2 format and optionally removes the VHD file.
 func ConvertVHDToQCOW2(vhdFile, qcow2File string, removeVHD bool) error {
-	// Convert using qemu-img
 	output, err := RunCommand("qemu-img", "convert", "-f", "vpc", "-O", "qcow2", vhdFile, qcow2File)
 	if err != nil {
 		return fmt.Errorf("qemu-img convert failed: %w\nOutput: %s", err, output)
 	}
-
-	// Workaround: Resize QCOW2 file by +5MB to workaround the disk size issue after conversion
 	output, err = RunCommand("qemu-img", "resize", qcow2File, "+5M")
 	if err != nil {
 		return fmt.Errorf("qemu-img resize failed: %w\nOutput: %s", err, output)
 	}
-
-	// Optionally remove VHD file
 	if removeVHD {
 		if err := os.Remove(vhdFile); err != nil {
 			return fmt.Errorf("failed to remove VHD file: %w", err)
 		}
 	}
-
 	return nil
 }
