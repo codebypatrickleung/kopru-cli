@@ -220,7 +220,7 @@ func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, display
 	}
 	imageID := *resp.Image.Id
 	p.logger.Successf("Custom image import started: %s", imageID)
-	p.logger.Info("Image import can take 30-60 minutes to complete")
+	p.logger.Info("Image import can take a while to complete")
 	return imageID, nil
 }
 

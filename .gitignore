@@ -25,4 +25,4 @@ Thumbs.db
 kopru-config.env
 *.env
 
-
+.gitignore

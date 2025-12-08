@@ -23,7 +23,6 @@ type Logger struct {
 // New creates a new Logger instance.
 func New(debug bool) *Logger {
 	flags := log.Ldate | log.Ltime
-
 	return &Logger{
 		infoLog:    log.New(os.Stderr, "[INFO] ", flags),
 		successLog: log.New(os.Stderr, "[DONE] ", flags),
@@ -31,23 +30,17 @@ func New(debug bool) *Logger {
 		errorLog:   log.New(os.Stderr, "[ERROR] ", flags),
 		debugLog:   log.New(os.Stderr, "[DEBUG] ", flags),
 		debug:      debug,
-		logFile:    nil,
 	}
 }
 
 // NewWithFile creates a new Logger instance that writes to both console and a file.
 func NewWithFile(debug bool, logFilePath string) (*Logger, error) {
 	flags := log.Ldate | log.Ltime
-
-	// Create/open the log file
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
-
-	// Create a single multi-writer that writes to both stderr and the file
 	multiWriter := io.MultiWriter(os.Stderr, logFile)
-
 	return &Logger{
 		infoLog:    log.New(multiWriter, "[INFO] ", flags),
 		successLog: log.New(multiWriter, "[DONE] ", flags),

@@ -5,38 +5,49 @@ import (
 	"testing"
 )
 
+func setEnvVars(vars map[string]string) {
+	for k, v := range vars {
+		os.Setenv(k, v)
+	}
+}
+
+func unsetEnvVars(vars []string) {
+	for _, k := range vars {
+		os.Unsetenv(k)
+	}
+}
+
 func TestConfigLoad(t *testing.T) {
-	// Set test environment variables
-	os.Setenv("AZURE_COMPUTE_NAME", "test-vm")
-	os.Setenv("AZURE_RESOURCE_GROUP", "test-rg")
-	os.Setenv("OCI_COMPARTMENT_ID", "ocid1.compartment.test")
-	os.Setenv("OCI_SUBNET_ID", "ocid1.subnet.test")
-	defer func() {
-		os.Unsetenv("AZURE_COMPUTE_NAME")
-		os.Unsetenv("AZURE_RESOURCE_GROUP")
-		os.Unsetenv("OCI_COMPARTMENT_ID")
-		os.Unsetenv("OCI_SUBNET_ID")
-	}()
+	envVars := map[string]string{
+		"AZURE_COMPUTE_NAME":   "test-vm",
+		"AZURE_RESOURCE_GROUP": "test-rg",
+		"OCI_COMPARTMENT_ID":   "ocid1.compartment.test",
+		"OCI_SUBNET_ID":        "ocid1.subnet.test",
+	}
+	setEnvVars(envVars)
+	defer unsetEnvVars([]string{
+		"AZURE_COMPUTE_NAME",
+		"AZURE_RESOURCE_GROUP",
+		"OCI_COMPARTMENT_ID",
+		"OCI_SUBNET_ID",
+	})
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	if cfg.AzureComputeName != "test-vm" {
-		t.Errorf("Expected AzureComputeName to be 'test-vm', got '%s'", cfg.AzureComputeName)
+	if cfg.AzureComputeName != envVars["AZURE_COMPUTE_NAME"] {
+		t.Errorf("Expected AzureComputeName to be '%s', got '%s'", envVars["AZURE_COMPUTE_NAME"], cfg.AzureComputeName)
 	}
-
-	if cfg.AzureResourceGroup != "test-rg" {
-		t.Errorf("Expected AzureResourceGroup to be 'test-rg', got '%s'", cfg.AzureResourceGroup)
+	if cfg.AzureResourceGroup != envVars["AZURE_RESOURCE_GROUP"] {
+		t.Errorf("Expected AzureResourceGroup to be '%s', got '%s'", envVars["AZURE_RESOURCE_GROUP"], cfg.AzureResourceGroup)
 	}
-
-	if cfg.OCICompartmentID != "ocid1.compartment.test" {
-		t.Errorf("Expected OCICompartmentID to be 'ocid1.compartment.test', got '%s'", cfg.OCICompartmentID)
+	if cfg.OCICompartmentID != envVars["OCI_COMPARTMENT_ID"] {
+		t.Errorf("Expected OCICompartmentID to be '%s', got '%s'", envVars["OCI_COMPARTMENT_ID"], cfg.OCICompartmentID)
 	}
-
-	if cfg.OCISubnetID != "ocid1.subnet.test" {
-		t.Errorf("Expected OCISubnetID to be 'ocid1.subnet.test', got '%s'", cfg.OCISubnetID)
+	if cfg.OCISubnetID != envVars["OCI_SUBNET_ID"] {
+		t.Errorf("Expected OCISubnetID to be '%s', got '%s'", envVars["OCI_SUBNET_ID"], cfg.OCISubnetID)
 	}
 }
 
@@ -96,35 +107,27 @@ func TestConfigValidate(t *testing.T) {
 }
 
 func TestConfigDefaults(t *testing.T) {
-	// Clear environment variables
 	os.Clearenv()
-
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Test default values
 	if cfg.SourcePlatform != "azure" {
 		t.Errorf("Expected default SourcePlatform to be 'azure', got '%s'", cfg.SourcePlatform)
 	}
-
 	if cfg.TargetPlatform != "oci" {
 		t.Errorf("Expected default TargetPlatform to be 'oci', got '%s'", cfg.TargetPlatform)
 	}
-
 	if cfg.OCIBucketName != "kopru-bucket" {
 		t.Errorf("Expected default OCIBucketName to be 'kopru-bucket', got '%s'", cfg.OCIBucketName)
 	}
-
 	if cfg.OCIImageName != "kopru-image" {
 		t.Errorf("Expected default OCIImageName to be 'kopru-image', got '%s'", cfg.OCIImageName)
 	}
-
 	if cfg.OCIRegion != "eu-frankfurt-1" {
 		t.Errorf("Expected default OCIRegion to be 'eu-frankfurt-1', got '%s'", cfg.OCIRegion)
 	}
-
 	if !cfg.KeepVHD {
 		t.Error("Expected default KeepVHD to be true")
 	}
@@ -137,52 +140,25 @@ func TestTemplateOutputDirNaming(t *testing.T) {
 		explicitDir      string
 		expectedDir      string
 	}{
-		{
-			name:             "Default dir with Azure Compute name",
-			azureComputeName: "test-vm",
-			explicitDir:      "",
-			expectedDir:      "./test-vm-template-output",
-		},
-		{
-			name:             "Azure Compute name with special characters",
-			azureComputeName: "Test_VM-123",
-			explicitDir:      "",
-			expectedDir:      "./test_vm-123-template-output",
-		},
-		{
-			name:             "Explicit dir overrides default",
-			azureComputeName: "test-vm",
-			explicitDir:      "./custom-dir",
-			expectedDir:      "./custom-dir",
-		},
-		{
-			name:             "No Azure Compute name uses default",
-			azureComputeName: "",
-			explicitDir:      "",
-			expectedDir:      "./template-output",
-		},
+		{"Default dir with Azure Compute name", "test-vm", "", "./test-vm-template-output"},
+		{"Azure Compute name with special characters", "Test_VM-123", "", "./test_vm-123-template-output"},
+		{"Explicit dir overrides default", "test-vm", "./custom-dir", "./custom-dir"},
+		{"No Azure Compute name uses default", "", "", "./template-output"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
 			os.Clearenv()
-
-			// Set Azure Compute name if provided
 			if tt.azureComputeName != "" {
 				os.Setenv("AZURE_COMPUTE_NAME", tt.azureComputeName)
 			}
-
-			// Set explicit dir if provided
 			if tt.explicitDir != "" {
 				os.Setenv("TEMPLATE_OUTPUT_DIR", tt.explicitDir)
 			}
-
 			cfg, err := Load("")
 			if err != nil {
 				t.Fatalf("Failed to load config: %v", err)
 			}
-
 			if cfg.TemplateOutputDir != tt.expectedDir {
 				t.Errorf("Expected TemplateOutputDir to be '%s', got '%s'", tt.expectedDir, cfg.TemplateOutputDir)
 			}
@@ -192,57 +168,30 @@ func TestTemplateOutputDirNaming(t *testing.T) {
 
 func TestOCIInstanceNameNaming(t *testing.T) {
 	tests := []struct {
-		name              string
-		azureComputeName  string
-		explicitName      string
-		expectedName      string
+		name             string
+		azureComputeName string
+		explicitName     string
+		expectedName     string
 	}{
-		{
-			name:             "Default name with Azure Compute name",
-			azureComputeName: "test-vm",
-			explicitName:     "",
-			expectedName:     "test-vm",
-		},
-		{
-			name:             "Azure Compute name with special characters",
-			azureComputeName: "Test_VM-123",
-			explicitName:     "",
-			expectedName:     "test_vm-123",
-		},
-		{
-			name:             "Explicit name overrides default",
-			azureComputeName: "test-vm",
-			explicitName:     "custom-instance",
-			expectedName:     "custom-instance",
-		},
-		{
-			name:             "No Azure Compute name uses default",
-			azureComputeName: "",
-			explicitName:     "",
-			expectedName:     "kopru-instance",
-		},
+		{"Default name with Azure Compute name", "test-vm", "", "test-vm"},
+		{"Azure Compute name with special characters", "Test_VM-123", "", "test_vm-123"},
+		{"Explicit name overrides default", "test-vm", "custom-instance", "custom-instance"},
+		{"No Azure Compute name uses default", "", "", "kopru-instance"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
 			os.Clearenv()
-
-			// Set Azure Compute name if provided
 			if tt.azureComputeName != "" {
 				os.Setenv("AZURE_COMPUTE_NAME", tt.azureComputeName)
 			}
-
-			// Set explicit name if provided
 			if tt.explicitName != "" {
 				os.Setenv("OCI_INSTANCE_NAME", tt.explicitName)
 			}
-
 			cfg, err := Load("")
 			if err != nil {
 				t.Fatalf("Failed to load config: %v", err)
 			}
-
 			if cfg.OCIInstanceName != tt.expectedName {
 				t.Errorf("Expected OCIInstanceName to be '%s', got '%s'", tt.expectedName, cfg.OCIInstanceName)
 			}
@@ -252,61 +201,33 @@ func TestOCIInstanceNameNaming(t *testing.T) {
 
 func TestOCIImageNameNaming(t *testing.T) {
 	tests := []struct {
-		name              string
-		azureComputeName  string
-		explicitName      string
-		expectedName      string
+		name             string
+		azureComputeName string
+		explicitName     string
+		expectedName     string
 	}{
-		{
-			name:             "Default name with Azure Compute name",
-			azureComputeName: "test-vm",
-			explicitName:     "",
-			expectedName:     "test-vm-image",
-		},
-		{
-			name:             "Azure Compute name with special characters",
-			azureComputeName: "Test_VM-123",
-			explicitName:     "",
-			expectedName:     "test_vm-123-image",
-		},
-		{
-			name:             "Explicit name overrides default",
-			azureComputeName: "test-vm",
-			explicitName:     "custom-image",
-			expectedName:     "custom-image",
-		},
-		{
-			name:             "No Azure Compute name uses default",
-			azureComputeName: "",
-			explicitName:     "",
-			expectedName:     "kopru-image",
-		},
+		{"Default name with Azure Compute name", "test-vm", "", "test-vm-image"},
+		{"Azure Compute name with special characters", "Test_VM-123", "", "test_vm-123-image"},
+		{"Explicit name overrides default", "test-vm", "custom-image", "custom-image"},
+		{"No Azure Compute name uses default", "", "", "kopru-image"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
 			os.Clearenv()
-
-			// Set Azure Compute name if provided
 			if tt.azureComputeName != "" {
 				os.Setenv("AZURE_COMPUTE_NAME", tt.azureComputeName)
 			}
-
-			// Set explicit name if provided
 			if tt.explicitName != "" {
 				os.Setenv("OCI_IMAGE_NAME", tt.explicitName)
 			}
-
 			cfg, err := Load("")
 			if err != nil {
 				t.Fatalf("Failed to load config: %v", err)
 			}
-
 			if cfg.OCIImageName != tt.expectedName {
 				t.Errorf("Expected OCIImageName to be '%s', got '%s'", tt.expectedName, cfg.OCIImageName)
 			}
 		})
 	}
 }
-

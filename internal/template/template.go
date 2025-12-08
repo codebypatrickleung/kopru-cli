@@ -204,6 +204,12 @@ variable "data_disk_names" {
   default     = []
 }
 
+variable "boot_volume_size_in_gbs" {
+  description = "Size of the boot volume in GB (minimum 50GB)"
+  type        = number
+  default     = 50
+}
+
 variable "freeform_tags" {
   description = "Freeform tags for resources"
   type        = map(string)
@@ -249,6 +255,7 @@ resource "oci_core_instance" "kopru_instance" {
   source_details {
 	source_type = "image"
 	source_id   = var.image_id
+	boot_volume_size_in_gbs = var.boot_volume_size_in_gbs
   }
 
   create_vnic_details {
@@ -375,6 +382,8 @@ instance_shape     = "VM.Standard.E5.Flex"
 instance_ocpus     = 1
 instance_memory_gb = 12
 assign_public_ip   = true
+
+boot_volume_size_in_gbs = 50
 
 region = "%s"
 

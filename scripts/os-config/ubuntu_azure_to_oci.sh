@@ -45,7 +45,7 @@ disable_azure_cloudinit_datasource() {
 }
 
 disable_azure_chrony_refclock() {
-    log_info "Disabling Azure PTP hyperv refclock in chrony config..."
+    log_info "Disabling Azure PTP Hyper-V refclock in chrony config..."
     local chrony_conf="$MOUNT_DIR/etc/chrony/chrony.conf"
     local target="refclock PHC /dev/ptp_hyperv poll 3 dpoll -2 offset 0"
     if [[ ! -f "$chrony_conf" ]]; then
@@ -204,9 +204,7 @@ CHROOT_EOF
 
     rm -f "$chroot_script"
     log_success "Removed temporary Oracle kernel installation script"
-    log_info "Cleaning up bind mounts..."
     cleanup_bind_mounts "${bind_mounts[@]}"
-    log_success "Bind mount cleanup complete"
     log_info "Restoring original resolv.conf..."
     [[ -e "$MOUNT_DIR/etc/resolv.conf.bak" ]] && mv "$MOUNT_DIR/etc/resolv.conf.bak" "$MOUNT_DIR/etc/resolv.conf"
     log_success "Restored original resolv.conf"
@@ -255,13 +253,11 @@ run_grub_update_in_chroot() {
         log_warning "Failed to run update-grub in chroot"
     fi
 
-    log_info "Cleaning up bind mounts..."
     cleanup_bind_mounts "${bind_mounts[@]}"
-    log_success "Bind mount cleanup complete"
     log_info "Restoring original resolv.conf..."
     [[ -e "$MOUNT_DIR/etc/resolv.conf.bak" ]] && mv "$MOUNT_DIR/etc/resolv.conf.bak" "$MOUNT_DIR/etc/resolv.conf"
     log_success "Restored original resolv.conf"
-    log_success "GRUB update in chroot complete"
+    log_success "GRUB update complete"
 }
 
 main() {
@@ -277,10 +273,8 @@ main() {
     add_oci_chrony_config
     add_oci_cloudinit_datasource
 
-    # Kernel switch
-    switch_to_oracle_optimized_kernel 
-
     # GRUB updates
+    switch_to_oracle_optimized_kernel 
     add_grub_config_for_oci_serial_console
     run_grub_update_in_chroot
 

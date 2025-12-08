@@ -13,16 +13,13 @@ import (
 )
 
 const (
-	// OCIMinVolumeSizeGB is the minimum volume size in GB for OCI block volumes
-	OCIMinVolumeSizeGB = 50
-	// MinDiskSpaceGB is the recommended minimum disk space in GB for migration operations
-	MinDiskSpaceGB = 100
+	OCIMinVolumeSizeGB = 50  // Minimum volume size in GB for OCI block volumes
+	MinDiskSpaceGB     = 100 // Recommended minimum disk space in GB for migration operations
 )
 
 // CheckCommand returns an error if the command is not found in PATH.
 func CheckCommand(cmd string) error {
-	_, err := exec.LookPath(cmd)
-	if err != nil {
+	if _, err := exec.LookPath(cmd); err != nil {
 		return fmt.Errorf("command '%s' not found in PATH", cmd)
 	}
 	return nil
@@ -55,8 +52,7 @@ func EnsureDir(path string) error {
 }
 
 // FindDiskFile finds the first file with the specified extension in the directory.
-// The extension parameter should include the dot (e.g., ".vhd", ".qcow2").
-func FindDiskFile(dir string, extension string) (string, error) {
+func FindDiskFile(dir, extension string) (string, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*"+extension))
 	if err != nil {
 		return "", err
@@ -67,7 +63,7 @@ func FindDiskFile(dir string, extension string) (string, error) {
 	return files[0], nil
 }
 
-// GetAvailableDiskSpace returns the available disk space in bytes for the given path using unix.Statfs.
+// GetAvailableDiskSpace returns the available disk space in bytes for the given path.
 func GetAvailableDiskSpace(path string, minDiskSpaceGB int64) (int64, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -87,56 +83,17 @@ func GetAvailableDiskSpace(path string, minDiskSpaceGB int64) (int64, error) {
 	return available, nil
 }
 
-// GetFileSizeGB returns the size of a file in gigabytes.
+// GetFileSizeGB returns the size of a file in gigabytes, rounded up and enforcing OCI minimum.
 func GetFileSizeGB(filePath string) (int64, error) {
 	info, err := os.Stat(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get file info: %w", err)
 	}
-
-	// Get size in bytes and convert to GB, rounding up
-	sizeBytes := info.Size()
-	sizeGB := (sizeBytes + (1024*1024*1024 - 1)) / (1024 * 1024 * 1024)
-
-	// Enforce OCI minimum volume size
+	sizeGB := (info.Size() + (1024*1024*1024 - 1)) / (1024 * 1024 * 1024)
 	if sizeGB < OCIMinVolumeSizeGB {
 		sizeGB = OCIMinVolumeSizeGB
 	}
-
 	return sizeGB, nil
-}
-
-// WriteFile writes content to a file using a temporary file and sudo.
-// It creates a temporary file, writes the content, sets permissions, and moves it to the final location.
-func WriteFile(path, content string) error {
-	// Create a temporary file securely
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), ".kopru-tmp-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-
-	// Write content and close
-	if _, err := tmpFile.WriteString(content); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Set appropriate permissions
-	if err := os.Chmod(tmpPath, 0644); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to set permissions: %w", err)
-	}
-
-	// Move the file using sudo
-	if _, err := RunCommand("sudo", "mv", tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to move temp file: %w", err)
-	}
-
-	return nil
 }
 
 // CopyDataWithDD copies data from source to destination using dd.
@@ -147,21 +104,16 @@ func CopyDataWithDD(source, destination string) error {
 		"bs=4M",
 		"status=progress",
 		"conv=fsync")
-
-	// Redirect output to /dev/null to avoid cluttering logs
 	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open /dev/null: %w", err)
 	}
 	defer devNull.Close()
-
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
-
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to copy data with dd: %w", err)
 	}
-
 	return nil
 }
 
@@ -182,23 +134,20 @@ func SliceDifference(a, b []string) []string {
 
 // HasFilesystem returns true if blkid detects a filesystem on the device.
 func HasFilesystem(device string) bool {
-	cmd := exec.Command("sudo", "blkid", device)
-	output, err := cmd.Output()
+	output, err := exec.Command("sudo", "blkid", device).Output()
 	return err == nil && len(output) > 0
 }
 
 // ListBlockDevices returns a list of block device names (without /dev/ prefix).
 func ListBlockDevices() ([]string, error) {
-	cmd := exec.Command("lsblk", "-dn", "-o", "NAME")
-	output, err := cmd.Output()
+	output, err := exec.Command("lsblk", "-dn", "-o", "NAME").Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list block devices: %w", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var devices []string
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
+		if line = strings.TrimSpace(line); line != "" {
 			devices = append(devices, line)
 		}
 	}
@@ -221,12 +170,10 @@ func DetectNewBlockDevice(beforeDevices []string) (string, error) {
 
 // ConvertVHDToQCOW2 converts a VHD file to QCOW2 format and optionally removes the VHD file.
 func ConvertVHDToQCOW2(vhdFile, qcow2File string, removeVHD bool) error {
-	output, err := RunCommand("qemu-img", "convert", "-f", "vpc", "-O", "qcow2", vhdFile, qcow2File)
-	if err != nil {
+	if output, err := RunCommand("qemu-img", "convert", "-f", "vpc", "-O", "qcow2", vhdFile, qcow2File); err != nil {
 		return fmt.Errorf("qemu-img convert failed: %w\nOutput: %s", err, output)
 	}
-	output, err = RunCommand("qemu-img", "resize", qcow2File, "+5M")
-	if err != nil {
+	if output, err := RunCommand("qemu-img", "resize", qcow2File, "+5M"); err != nil {
 		return fmt.Errorf("qemu-img resize failed: %w\nOutput: %s", err, output)
 	}
 	if removeVHD {
