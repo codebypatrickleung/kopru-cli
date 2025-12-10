@@ -2,6 +2,7 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,15 +12,12 @@ import (
 )
 
 const (
-	MaxNBDDevices        = 8
-	MaxPartitionsPerNBD  = 4
+	MaxNBDDevices       = 8
+	MaxPartitionsPerNBD = 4
 )
 
-// nbdMutex protects NBD device allocation to prevent race conditions
-// when multiple goroutines try to get and connect NBD devices concurrently.
 var nbdMutex sync.Mutex
 
-// MountQCOW2Image loads, connects, finds, and mounts a QCOW2 or VHD image.
 func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 	if _, err := os.Stat(imageFile); os.IsNotExist(err) {
 		return "", "", fmt.Errorf("image file not found: %s", imageFile)
@@ -27,9 +25,7 @@ func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 	if err := LoadNBDModule(); err != nil {
 		return "", "", fmt.Errorf("failed to load NBD module: %w", err)
 	}
-	
-	// Lock to prevent race condition when multiple goroutines try to
-	// get and connect NBD devices concurrently
+
 	nbdMutex.Lock()
 	nbdDevice, err := GetFreeNBDDevice()
 	if err != nil {
@@ -41,7 +37,7 @@ func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 		return "", "", err
 	}
 	nbdMutex.Unlock()
-	
+
 	targetPartition, err := FindMountablePartition(nbdDevice)
 	if err != nil {
 		DisconnectNBD(nbdDevice)
@@ -60,7 +56,6 @@ func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 	return mountDir, targetPartition, nil
 }
 
-// FindMountablePartition returns the first mountable partition or device.
 func FindMountablePartition(nbdDevice string) (string, error) {
 	var partitions []string
 	for i := 1; i <= MaxPartitionsPerNBD; i++ {
@@ -78,7 +73,6 @@ func FindMountablePartition(nbdDevice string) (string, error) {
 	return "", fmt.Errorf("no mountable partition found on %s", nbdDevice)
 }
 
-// CleanupNBDMount unmounts and disconnects NBD devices and removes the mount directory.
 func CleanupNBDMount(mountPoint string) error {
 	var lastErr error
 	var nbdDevice string
@@ -108,7 +102,6 @@ func CleanupNBDMount(mountPoint string) error {
 	return lastErr
 }
 
-// GetFreeNBDDevice finds and returns the first available NBD device.
 func GetFreeNBDDevice() (string, error) {
 	for i := 0; i < MaxNBDDevices; i++ {
 		nbdDevice := fmt.Sprintf("/dev/nbd%d", i)
@@ -122,7 +115,6 @@ func GetFreeNBDDevice() (string, error) {
 	return "", fmt.Errorf("no free NBD device found (checked %d devices)", MaxNBDDevices)
 }
 
-// getNBDDeviceFromMountPoint returns the NBD device that is mounted at the given mount point.
 func getNBDDeviceFromMountPoint(mountPoint string) string {
 	cmd := exec.Command("findmnt", "-n", "-o", "SOURCE", mountPoint)
 	output, err := cmd.Output()
@@ -141,7 +133,6 @@ func getNBDDeviceFromMountPoint(mountPoint string) string {
 	return ""
 }
 
-// isNBDDeviceConnected checks if an NBD device is currently connected.
 func isNBDDeviceConnected(nbdDevice string) bool {
 	cmd := exec.Command("sudo", "blockdev", "--getsize64", nbdDevice)
 	output, err := cmd.Output()
@@ -151,7 +142,6 @@ func isNBDDeviceConnected(nbdDevice string) bool {
 	return strings.TrimSpace(string(output)) != "0"
 }
 
-// LoadNBDModule loads the NBD kernel module with specified parameters.
 func LoadNBDModule() error {
 	if IsNBDModuleLoaded() {
 		return nil
@@ -162,11 +152,15 @@ func LoadNBDModule() error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to load NBD module: %w", err)
 	}
-	time.Sleep(1 * time.Second)
-	return nil
+	for i := 0; i < 20; i++ {
+		if IsNBDModuleLoaded() {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("NBD module did not load after modprobe")
 }
 
-// IsNBDModuleLoaded returns true if the NBD module is loaded by checking lsmod output.
 func IsNBDModuleLoaded() bool {
 	cmd := exec.Command("lsmod")
 	output, err := cmd.Output()
@@ -182,7 +176,6 @@ func IsNBDModuleLoaded() bool {
 	return false
 }
 
-// ConnectImageToNBD connects a QCOW2 or VHD file to an NBD device.
 func ConnectImageToNBD(imageFile, nbdDevice string) error {
 	lowerImageFile := strings.ToLower(imageFile)
 	var format string
@@ -198,11 +191,22 @@ func ConnectImageToNBD(imageFile, nbdDevice string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to connect image to NBD: %w", err)
 	}
-	time.Sleep(3 * time.Second)
+	if err := pollNBDDeviceReady(nbdDevice); err != nil {
+		return err
+	}
 	return nil
 }
 
-// DisconnectNBD disconnects an NBD device.
+func pollNBDDeviceReady(nbdDevice string) error {
+	for i := 0; i < 30; i++ {
+		if isNBDDeviceConnected(nbdDevice) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("NBD device %s did not become ready after connect", nbdDevice)
+}
+
 func DisconnectNBD(nbdDevice string) error {
 	cmd := exec.Command("sudo", "qemu-nbd", "--disconnect", nbdDevice)
 	if err := cmd.Run(); err != nil {
@@ -211,18 +215,20 @@ func DisconnectNBD(nbdDevice string) error {
 	return nil
 }
 
-// MountPartition mounts a partition to a mount point.
 func MountPartition(partition, mountPoint string) error {
-	cmd := exec.Command("sudo", "mount", partition, mountPoint)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sudo", "mount", partition, mountPoint)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to mount partition: %w", err)
 	}
 	return nil
 }
 
-// UnmountPartition unmounts a mount point.
 func UnmountPartition(mountPoint string) error {
-	cmd := exec.Command("sudo", "umount", mountPoint)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sudo", "umount", mountPoint)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to unmount partition: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -135,8 +136,14 @@ func (p *Provider) GetComputeDataDiskNames(ctx context.Context, resourceGroup, c
 
 // ExportAzureDisk exports an Azure disk by creating a snapshot, generating a SAS URL, and downloading the VHD.
 func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup, exportDir string) (string, error) {
-	timestamp := fmt.Sprintf("%d", time.Now().Unix())
-	snapshotName := fmt.Sprintf("export-%s-%s", diskName, timestamp)
+	timestamp := strconv.FormatInt(time.Now().Unix(), 36)
+	maxDiskNameLen := 80 - 4 - len(timestamp)
+	truncatedDiskName := diskName
+	if len(diskName) > maxDiskNameLen {
+		truncatedDiskName = diskName[:maxDiskNameLen]
+	}
+	
+	snapshotName := fmt.Sprintf("ss-%s-%s", truncatedDiskName, timestamp)
 	vhdFile := filepath.Join(exportDir, fmt.Sprintf("%s.vhd", diskName))
 
 	p.logger.Infof("Creating snapshot: %s", snapshotName)

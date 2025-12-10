@@ -14,7 +14,7 @@ Kopru is a Go-based CLI tool that automates migration of Compute instances into 
 ## Supported Configurations
 
 - **Source Platform**: Microsoft Azure (more platforms coming soon)
-- **Operating System**: Ubuntu (more OSes coming soon)
+- **Operating System**: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS (more OSes coming soon)
 - **Execution Environment**: Oracle Linux 9+ in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
@@ -86,8 +86,7 @@ Step 1-5 are the hard part! Now, run Kopru to start the migration. There are thr
     ./kopru --config /path/to/kopru-config.env
     ```
 
-  **Note:** Kopru creates a log file in the current directory named `kopru-<timestamp>.log`. Logs are shown in the console and saved for review.
-
+ 
 7. **Manual OpenTofu Deployment** (if auto-deployment was skipped):
 
 This is an optional step as the tool can auto-deploy the generated template. If you used `--skip-template-deploy`, navigate to the `template-output` directory and run OpenTofu commands to deploy the generated template:
@@ -100,5 +99,22 @@ This is an optional step as the tool can auto-deploy the generated template. If 
   ```
 
 If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core, and is part of the Linux Foundation. The generated templates maintain compatibility. 
+
+## Additional Resources
+
+- **Logging**:
+Kopru creates a log file in the current directory named `kopru-<timestamp>.log`. Logs are shown in the console and saved for review. 
+
+  ![Kopru Log](img/kopru-log.png)
+  
+- **OS Configurations**:
+  All the OS-specific configurations used by Kopru CLI during image migration are written in bash script files located in the `scripts/os-config/` directory. There are several benefits to using bash scripts for OS configurations:
+
+  - **Easier maintenance**: Bash scripts are easier to modify and test independently
+  - **Better separation of concerns**: OS-specific logic is isolated from the Go application
+  - **Flexibility**: New OS configurations can be added by simply creating new scripts
+  - **Transparency**: Configuration changes are more visible and auditable 
+
+## Conclusion
 
 That's it! Hopefully this guide helps you get started with Kopru for your cloud migrations to OCI. For more details, please feel free to connect with me on [LinkedIn](https://www.linkedin.com/in/pgwl/) or GitHub. Happy migrating! 
