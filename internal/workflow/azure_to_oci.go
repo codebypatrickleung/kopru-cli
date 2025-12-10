@@ -425,7 +425,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 
 			h.logger.Infof("Creating OCI volume of size %d GB...", diskSizeGB)
 			baseDiskName := strings.TrimSuffix(filepath.Base(vhdFile), ".vhd")
-			volumeName := fmt.Sprintf("imported-%s", baseDiskName)
+			volumeName := fmt.Sprintf("bv-%s", baseDiskName)
 			h.logger.Infof("Volume name: %s", volumeName)
 
 			volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
@@ -443,8 +443,6 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			createdVolumes = append(createdVolumes, volumeID)
 			createdVolumesMutex.Unlock()
 
-			// Critical section: Capture device list, attach volume, and detect new device
-			// This must be done atomically to prevent multiple goroutines from detecting the same device
 			deviceDetectionMutex.Lock()
 			beforeDevices, err := common.ListBlockDevices()
 			if err != nil {
@@ -509,7 +507,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 				h.logger.Info("Volume detached")
 			}
 
-			snapshotName := fmt.Sprintf("%s-snapshot", baseDiskName)
+			snapshotName := fmt.Sprintf("ss-%s", baseDiskName)
 			h.logger.Infof("Creating snapshot: %s...", snapshotName)
 			snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeID, snapshotName)
 			if err != nil {
