@@ -14,6 +14,8 @@ import (
 const (
 	MaxNBDDevices       = 8
 	MaxPartitionsPerNBD = 4
+	MaxMountRetries     = 3
+	RetryDelaySeconds   = 2
 )
 
 var nbdMutex sync.Mutex
@@ -26,34 +28,56 @@ func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 		return "", "", fmt.Errorf("failed to load NBD module: %w", err)
 	}
 
-	nbdMutex.Lock()
-	nbdDevice, err := GetFreeNBDDevice()
-	if err != nil {
-		nbdMutex.Unlock()
-		return "", "", fmt.Errorf("failed to get free NBD device: %w", err)
-	}
-	if err := ConnectImageToNBD(imageFile, nbdDevice); err != nil {
-		nbdMutex.Unlock()
-		return "", "", err
-	}
-	nbdMutex.Unlock()
+	attemptedDevices := make(map[string]bool)
+	for deviceIndex := 0; deviceIndex < MaxNBDDevices; deviceIndex++ {
+		nbdMutex.Lock()
+		nbdDevice, err := GetFreeNBDDevice()
+		if err != nil {
+			nbdMutex.Unlock()
+			return "", "", fmt.Errorf("failed to get free NBD device: %w", err)
+		}
+		if attemptedDevices[nbdDevice] {
+			nbdMutex.Unlock()
+			continue
+		}
+		attemptedDevices[nbdDevice] = true
 
-	targetPartition, err := FindMountablePartition(nbdDevice)
-	if err != nil {
+		if err := ConnectImageToNBD(imageFile, nbdDevice); err != nil {
+			nbdMutex.Unlock()
+			continue
+		}
+		nbdMutex.Unlock()
+
+		var mountSucceeded bool
+		var targetPartition, mountDir string
+
+		for retry := 0; retry < MaxMountRetries; retry++ {
+			if retry > 0 {
+				time.Sleep(time.Duration(RetryDelaySeconds) * time.Second)
+			}
+			targetPartition, err = FindMountablePartition(nbdDevice)
+			if err != nil {
+				continue
+			}
+			mountDir, err = os.MkdirTemp("", "kopru-mount-*")
+			if err != nil {
+				continue
+			}
+			if err := MountPartition(targetPartition, mountDir); err != nil {
+				os.RemoveAll(mountDir)
+				mountDir = ""
+				continue
+			}
+			mountSucceeded = true
+			break
+		}
+
+		if mountSucceeded {
+			return mountDir, targetPartition, nil
+		}
 		DisconnectNBD(nbdDevice)
-		return "", "", fmt.Errorf("failed to find partition: %w", err)
 	}
-	mountDir, err = os.MkdirTemp("", "kopru-mount-*")
-	if err != nil {
-		DisconnectNBD(nbdDevice)
-		return "", "", fmt.Errorf("failed to create mount directory: %w", err)
-	}
-	if err := MountPartition(targetPartition, mountDir); err != nil {
-		os.RemoveAll(mountDir)
-		DisconnectNBD(nbdDevice)
-		return "", "", fmt.Errorf("failed to mount partition: %w", err)
-	}
-	return mountDir, targetPartition, nil
+	return "", "", fmt.Errorf("failed to mount image after trying multiple NBD devices and retries")
 }
 
 func FindMountablePartition(nbdDevice string) (string, error) {
@@ -191,10 +215,7 @@ func ConnectImageToNBD(imageFile, nbdDevice string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to connect image to NBD: %w", err)
 	}
-	if err := pollNBDDeviceReady(nbdDevice); err != nil {
-		return err
-	}
-	return nil
+	return pollNBDDeviceReady(nbdDevice)
 }
 
 func pollNBDDeviceReady(nbdDevice string) error {
