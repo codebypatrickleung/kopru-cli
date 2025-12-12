@@ -128,9 +128,6 @@ func TestConfigDefaults(t *testing.T) {
 	if cfg.OCIRegion != "eu-frankfurt-1" {
 		t.Errorf("Expected default OCIRegion to be 'eu-frankfurt-1', got '%s'", cfg.OCIRegion)
 	}
-	if !cfg.KeepVHD {
-		t.Error("Expected default KeepVHD to be true")
-	}
 }
 
 func TestTemplateOutputDirNaming(t *testing.T) {

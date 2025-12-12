@@ -4,7 +4,7 @@ Kopru is a Go-based CLI tool that automates migration of Compute instances into 
 
 ## Features
 
-- **Simple CLI**: Start a migration with just 4 parameters.
+- **Simple CLI**: Start a migration with just a few parameters.
 - **Go Implementation**: Built with Go, using Cobra and Viper for CLI and config management.
 - **Native SDK Integration**: Uses official Azure and OCI Go SDKs for authentication and performance.
 - **Workflow Resume**: `--skip-*` flags let you bypass completed steps and resume migrations.
@@ -13,8 +13,11 @@ Kopru is a Go-based CLI tool that automates migration of Compute instances into 
 
 ## Supported Configurations
 
-- **Source Platform**: Microsoft Azure (more platforms coming soon)
-- **Operating System**: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS (more OSes coming soon)
+- **Source Platform**: (more platforms coming soon)
+  - Microsoft Azure 
+- **Operating System**: (more OSes coming soon)
+  - Ubuntu 22.04 LTS  
+  - Ubuntu 24.04 LTS 
 - **Execution Environment**: Oracle Linux 9+ in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
@@ -72,6 +75,7 @@ Step 1-5 are the hard part! Now, run Kopru to start the migration. There are thr
     export AZURE_RESOURCE_GROUP="my-rg"
     export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..."
     export OCI_SUBNET_ID="ocid1.subnet.oc1..."
+    export OCI_IMAGE_OS="Ubuntu"
     ./kopru
     ```
   - **Command-line flags**:
@@ -85,8 +89,8 @@ Step 1-5 are the hard part! Now, run Kopru to start the migration. There are thr
     ```bash
     ./kopru --config /path/to/kopru-config.env
     ```
+    
 
- 
 7. **Manual OpenTofu Deployment** (if auto-deployment was skipped):
 
 This is an optional step as the tool can auto-deploy the generated template. If you used `--skip-template-deploy`, navigate to the `template-output` directory and run OpenTofu commands to deploy the generated template:

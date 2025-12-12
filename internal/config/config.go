@@ -28,12 +28,12 @@ type Config struct {
 	OCIBucketName               string
 	OCIImageName                string
 	OCIImageOS                  string
+	OCIImageOSVersion           string
 	OCIInstanceName             string
 	OCIRegion                   string
 	OCIAvailabilityDomain       string
 	TemplateOutputDir           string
 	SkipTemplateDeploy          bool
-	CustomOSConfigurationScript string
 	SkipPrereq                  bool
 	SkipExport                  bool
 	SkipConvert                 bool
@@ -44,7 +44,6 @@ type Config struct {
 	SkipDDImport                bool
 	SkipTemplate                bool
 	SkipVerify                  bool
-	KeepVHD                     bool
 	DiskMappingFile             string
 	Debug                       bool
 }
@@ -58,7 +57,6 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("oci_instance_name", defaultInstanceName)
 	viper.SetDefault("oci_region", "eu-frankfurt-1")
 	viper.SetDefault("template_output_dir", "./template-output")
-	viper.SetDefault("keep_vhd", true)
 	viper.SetDefault("disk_mapping_file", "./disk-mapping.json")
 
 	viper.AutomaticEnv()
@@ -103,12 +101,12 @@ func Load(configFile string) (*Config, error) {
 		OCIBucketName:               viper.GetString("oci_bucket_name"),
 		OCIImageName:                ociImageName,
 		OCIImageOS:                  viper.GetString("oci_image_os"),
+		OCIImageOSVersion:           viper.GetString("oci_image_os_version"),
 		OCIInstanceName:             ociInstanceName,
 		OCIRegion:                   viper.GetString("oci_region"),
 		OCIAvailabilityDomain:       viper.GetString("oci_availability_domain"),
 		TemplateOutputDir:           templateOutputDir,
 		SkipTemplateDeploy:          viper.GetBool("skip_template_deploy"),
-		CustomOSConfigurationScript: viper.GetString("custom_os_configuration_script"),
 		SkipPrereq:                  viper.GetBool("skip_prereq"),
 		SkipExport:                  viper.GetBool("skip_os_export"),
 		SkipConvert:                 viper.GetBool("skip_os_convert"),
@@ -119,7 +117,6 @@ func Load(configFile string) (*Config, error) {
 		SkipDDImport:                viper.GetBool("skip_dd_import"),
 		SkipTemplate:                viper.GetBool("skip_template"),
 		SkipVerify:                  viper.GetBool("skip_verify"),
-		KeepVHD:                     viper.GetBool("keep_vhd"),
 		DiskMappingFile:             viper.GetString("disk_mapping_file"),
 		Debug:                       viper.GetBool("debug"),
 	}
@@ -144,9 +141,6 @@ func (c *Config) Validate() error {
 		if c.OCISubnetID == "" {
 			return fmt.Errorf("oci_subnet_id is required for OCI target platform")
 		}
-	}
-	if c.OCIImageOS == "CUSTOM" && c.CustomOSConfigurationScript == "" {
-		return fmt.Errorf("custom_os_configuration_script is required when oci_image_os is set to CUSTOM")
 	}
 	return nil
 }

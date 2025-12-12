@@ -15,7 +15,7 @@ import (
 
 var (
 	cfgFile string
-	version = "0.1.1"
+	version = "0.1.2"
 )
 
 func main() {
@@ -49,13 +49,12 @@ func init() {
 		{"oci-subnet-id", "", "OCI subnet OCID", ""},
 		{"oci-bucket-name", "", "OCI Object Storage bucket name", ""},
 		{"oci-image-name", "", "OCI custom image name", ""},
-		{"oci-image-os", "", "OS type for OCI adjustments (Ubuntu, CUSTOM)", "Ubuntu"},
+		{"oci-image-os", "", "OS type for OCI adjustments (Ubuntu, Windows)", "Ubuntu"},
 		{"oci-instance-name", "", "OCI instance name", ""},
 		{"oci-availability-domain", "", "OCI availability domain", ""},
 		{"template-output-dir", "", "Directory for template files", "./template-output"},
 		{"source-platform", "", "Source cloud platform (azure)", "azure"},
 		{"target-platform", "", "Target cloud platform (oci)", "oci"},
-		{"custom-os-configuration-script", "", "Path to custom OS configuration script", ""},
 	}
 	for _, f := range flags {
 		rootCmd.Flags().String(f.name, f.defaultValue, f.usage)
@@ -75,7 +74,6 @@ func init() {
 		{"skip-template", "Skip template generation"},
 		{"skip-template-deploy", "Skip template deployment"},
 		{"skip-verify", "Skip workflow verification"},
-		{"keep-vhd", "Keep VHD file after conversion to QCOW2"},
 		{"debug", "Enable debug logging"},
 	}
 	for _, f := range boolFlags {
@@ -105,8 +103,6 @@ func init() {
 		"SKIP_TEMPLATE":                  "skip-template",
 		"SKIP_TEMPLATE_DEPLOY":           "skip-template-deploy",
 		"SKIP_VERIFY":                    "skip-verify",
-		"KEEP_VHD":                       "keep-vhd",
-		"CUSTOM_OS_ADJUSTMENT_SCRIPT":    "custom-os-configuration-script",
 		"TEMPLATE_OUTPUT_DIR":            "template-output-dir",
 		"SOURCE_PLATFORM":                "source-platform",
 		"TARGET_PLATFORM":                "target-platform",
