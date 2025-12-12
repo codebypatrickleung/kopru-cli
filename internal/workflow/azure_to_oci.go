@@ -150,6 +150,10 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	if _, ok := allowedOS[h.config.OCIImageOS]; !ok {
 		return fmt.Errorf("invalid OCI_IMAGE_OS: '%s'. Allowed values: 'Oracle Linux', 'AlmaLinux', 'CentOS', 'Debian', 'RHEL', 'Rocky Linux', 'SUSE', 'Ubuntu', 'Windows'", h.config.OCIImageOS)
 	}
+	if strings.ToLower(osType) == "windows" && strings.ToLower(h.config.OCIImageOS) != "windows" {
+		return fmt.Errorf("detected OS type is 'Windows', but OCI_IMAGE_OS is set to '%s'. Please set OCI_IMAGE_OS to 'Windows'", h.config.OCIImageOS)
+	}
+	h.logger.Successf("✓ Detected OS type '%s' matches OCI_IMAGE_OS '%s'", osType, h.config.OCIImageOS)
 	h.logger.Successf("✓ Operating system configured for OCI: %s", h.config.OCIImageOS)
 	if common.IsWindowsOS(h.config.OCIImageOS) && h.config.OCIImageOSVersion == "" {
 		return fmt.Errorf("operating system version (OCI_IMAGE_OS_VERSION) is required when migrating a Windows instance")
