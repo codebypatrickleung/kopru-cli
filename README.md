@@ -1,6 +1,6 @@
 # Kopru
 
-Kopru is a Go-based CLI tool that automates migration of Compute instances into Oracle Cloud Infrastructure (OCI). Migrating workloads between clouds is often manual and costly. Kopru streamlines this with a customizable, extensible workflow for simpler, affordable Compute imports into OCI.
+Kopru is a Go-based CLI tool that automates migration of Compute instances into Oracle Cloud Infrastructure (OCI). Kopru streamlines this with a customizable, extensible workflow for simpler, affordable Compute imports into OCI. 
 
 ## Features
 
@@ -13,6 +13,8 @@ Kopru is a Go-based CLI tool that automates migration of Compute instances into 
 
 ## Supported Configurations
 
+While the overall migration workflow is consistent across operating systems, certain OS-specific configurations are required during the process. Kopru have been tested using the platform images listed below so far:
+
 - **Source Platform**: (more platforms coming soon)
   - Microsoft Azure 
 - **Operating System**: (more OSes coming soon)
@@ -20,6 +22,8 @@ Kopru is a Go-based CLI tool that automates migration of Compute instances into 
   - Ubuntu 24.04 LTS 
 - **Execution Environment**: Oracle Linux 9+ in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
+
+If your source VM have data disks attached, Kopru will automatically migrate those as well. The disk mapping is based on UUID, so the data disks will be re-attached correctly in OCI. If you are not using UUID in `/etc/fstab`, consider switching to UUIDs to avoid boot issues.
 
 ## Quick Start
 
@@ -54,7 +58,7 @@ Build the Kopru CLI binary.
   ```
 5. **Authentication Setup**
 
-Kopru does not handle authentication directly. Set up authentication for both Azure and OCI using the official SDK methods:
+Kopru does not handle authentication directly. Set up authentication for both Azure and OCI using the official SDK/CLI methods, this the same as setting up authentication for your CLI tools.
 
   - **Azure**: Kopru uses `DefaultAzureCredential`. See [Azure Go SDK docs](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps). Set:
     ```bash
@@ -67,7 +71,7 @@ Kopru does not handle authentication directly. Set up authentication for both Az
 
 6. Run Kopru using one of these methods:
 
-Step 1-5 are the hard part! Now, run Kopru to start the migration. There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only four required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet. So basically, just tell Kopru what Azure VM to migrate and where to put it in OCI.
+Step 1-5 are the hard part! Now, run Kopru to start the migration. There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet. So basically, just tell Kopru what Azure VM to migrate and where to put it in OCI.
 
   - **Environment variables**:
     ```bash
@@ -89,7 +93,8 @@ Step 1-5 are the hard part! Now, run Kopru to start the migration. There are thr
     ```bash
     ./kopru --config /path/to/kopru-config.env
     ```
-    
+
+For a full list of parameters, see `./kopru --help` or refer to the [Configuration Parameters](kopru-config.env.template) document.
 
 7. **Manual OpenTofu Deployment** (if auto-deployment was skipped):
 
