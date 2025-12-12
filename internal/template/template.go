@@ -21,16 +21,18 @@ type OCIGenerator struct {
 	importedImageID       string
 	dataDiskSnapshotIDs   []string
 	dataDiskSnapshotNames []string
+	bootVolumeSizeGB      int64
 }
 
 // NewOCIGenerator creates a new OCI template generator.
-func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string) *OCIGenerator {
+func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64) *OCIGenerator {
 	return &OCIGenerator{
 		config:                cfg,
 		logger:                log,
 		importedImageID:       importedImageID,
 		dataDiskSnapshotIDs:   dataDiskSnapshotIDs,
 		dataDiskSnapshotNames: dataDiskSnapshotNames,
+		bootVolumeSizeGB:      bootVolumeSizeGB,
 	}
 }
 
@@ -365,6 +367,12 @@ func (g *OCIGenerator) generateTFVars() error {
 	snapshotIDsList := formatTemplateList(g.dataDiskSnapshotIDs)
 	snapshotNamesList := formatTemplateList(g.dataDiskSnapshotNames)
 
+	// Calculate boot volume size: max of 50GB or the source Azure VM boot disk size
+	bootVolumeSize := int64(50)
+	if g.bootVolumeSizeGB > bootVolumeSize {
+		bootVolumeSize = g.bootVolumeSizeGB
+	}
+
 	content := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
 # Variable Values for OpenTofu
 # --------------------------------------------------------------------------------------------
@@ -383,7 +391,7 @@ instance_ocpus     = 1
 instance_memory_gb = 12
 assign_public_ip   = true
 
-boot_volume_size_in_gbs = 50
+boot_volume_size_in_gbs = %d
 
 region = "%s"
 
@@ -401,6 +409,7 @@ freeform_tags = {
 		imageID,
 		ad,
 		g.config.OCIInstanceName,
+		bootVolumeSize,
 		g.config.OCIRegion,
 		snapshotIDsList,
 		snapshotNamesList,

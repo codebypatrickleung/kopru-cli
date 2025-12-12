@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/core"
 	"github.com/oracle/oci-go-sdk/v65/identity"
 	"github.com/oracle/oci-go-sdk/v65/objectstorage"
+	"github.com/oracle/oci-go-sdk/v65/objectstorage/transfer"
 )
 
 // Provider implements OCI cloud operations.
@@ -165,24 +165,20 @@ func (p *Provider) UploadToObjectStorage(ctx context.Context, namespace, bucketN
 	if err != nil {
 		return fmt.Errorf("failed to create object storage client: %w", err)
 	}
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+
+	uploadManager := transfer.NewUploadManager()
+
+	req := transfer.UploadFileRequest{
+		UploadRequest: transfer.UploadRequest{
+			NamespaceName:       &namespace,
+			BucketName:          &bucketName,
+			ObjectName:          &objectName,
+			ObjectStorageClient: &client,
+		},
+		FilePath: filePath,
 	}
-	defer file.Close()
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
-	}
-	contentLength := fileInfo.Size()
-	req := objectstorage.PutObjectRequest{
-		NamespaceName: &namespace,
-		BucketName:    &bucketName,
-		ObjectName:    &objectName,
-		PutObjectBody: file,
-		ContentLength: &contentLength,
-	}
-	_, err = client.PutObject(ctx, req)
+
+	_, err = uploadManager.UploadFile(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to upload object: %w", err)
 	}
@@ -190,8 +186,8 @@ func (p *Provider) UploadToObjectStorage(ctx context.Context, namespace, bucketN
 	return nil
 }
 
-// ImportCustomImage imports a custom image from Object Storage.
-func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, displayName, namespace, bucketName, objectName, operatingSystem string) (string, error) {
+// ImportCustomImage imports a custom image from Object Storage. operatingSystemVersion is optional but required for Windows images.
+func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, displayName, namespace, bucketName, objectName, operatingSystem, operatingSystemVersion string) (string, error) {
 	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to create compute client: %w", err)
@@ -199,19 +195,23 @@ func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, display
 	encodedObjectName := url.PathEscape(objectName)
 	sourceURL := fmt.Sprintf("https://objectstorage.%s.oraclecloud.com/n/%s/b/%s/o/%s",
 		p.region, namespace, bucketName, encodedObjectName)
-	if operatingSystem == "" {
-		operatingSystem = "Generic Linux"
-	}
+
 	osPtr := common.String(operatingSystem)
+	imageSourceDetails := core.ImageSourceViaObjectStorageUriDetails{
+		SourceUri:       &sourceURL,
+		OperatingSystem: osPtr,
+	}
+
+	if operatingSystemVersion != "" {
+		imageSourceDetails.OperatingSystemVersion = common.String(operatingSystemVersion)
+	}
+
 	req := core.CreateImageRequest{
 		CreateImageDetails: core.CreateImageDetails{
-			CompartmentId: &compartmentID,
-			DisplayName:   &displayName,
-			LaunchMode:    core.CreateImageDetailsLaunchModeParavirtualized,
-			ImageSourceDetails: core.ImageSourceViaObjectStorageUriDetails{
-				SourceUri:       &sourceURL,
-				OperatingSystem: osPtr,
-			},
+			CompartmentId:      &compartmentID,
+			DisplayName:        &displayName,
+			LaunchMode:         core.CreateImageDetailsLaunchModeParavirtualized,
+			ImageSourceDetails: imageSourceDetails,
 		},
 	}
 	resp, err := client.CreateImage(ctx, req)
@@ -219,7 +219,7 @@ func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, display
 		return "", fmt.Errorf("failed to create image: %w", err)
 	}
 	imageID := *resp.Image.Id
-	p.logger.Successf("Custom image import started: %s", imageID)
+	p.logger.Successf("Custom image import for OS %s started: %s", operatingSystem, imageID)
 	p.logger.Info("Image import can take a while to complete")
 	return imageID, nil
 }
@@ -230,14 +230,13 @@ func (p *Provider) WaitForImageAvailable(ctx context.Context, imageID string) er
 	if err != nil {
 		return fmt.Errorf("failed to create compute client: %w", err)
 	}
-	p.logger.Info("Waiting for image import to complete...")
-	p.logger.Infof("Image ID: %s", imageID)
+	p.logger.Infof("Waiting for image %s import to complete...", imageID)
 	pollInterval := 30 * time.Second
 	timeout := 2 * time.Hour
 	startTime := time.Now()
 	for {
 		if time.Since(startTime) > timeout {
-			return fmt.Errorf("timeout waiting for image to become available after %v", timeout)
+			return fmt.Errorf("timeout waiting for image %s to become available after %v", imageID, timeout)
 		}
 		req := core.GetImageRequest{
 			ImageId: &imageID,
@@ -254,7 +253,7 @@ func (p *Provider) WaitForImageAvailable(ctx context.Context, imageID string) er
 		}
 		if lifecycleState == core.ImageLifecycleStateDeleted ||
 			lifecycleState == core.ImageLifecycleStateDisabled {
-			return fmt.Errorf("image import failed with state: %s", lifecycleState)
+			return fmt.Errorf("image import %s failed with state: %s", imageID, lifecycleState)
 		}
 		p.logger.Infof("Image status: %s - waiting %v before next check...", lifecycleState, pollInterval)
 		select {

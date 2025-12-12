@@ -25,25 +25,15 @@ disable_azure_udev_rules() {
         log_info "udev rules directory not found, skipping Azure udev rules disable."
         return 0
     fi
-    local found=0
     for rule in 66-azure-storage.rules 99-azure-product-uuid.rules; do
         local rule_path="$udev_dir/$rule"
         if [[ -f "$rule_path" ]]; then
             mv "$rule_path" "${rule_path}.disable" 2>/dev/null && log_success "Disabled $rule"
-            found=1
         fi
     done
-    [[ $found -eq 0 ]] && log_info "No Azure-specific udev rules found, skipping..."
+    return 0
 }
-
-disable_azure_linux_agent() {
-    log_info "Disabling WALinux Agent files..."
-    for path in /var/lib/waagent /etc/init/walinuxagent.conf /etc/init.d/walinuxagent /usr/sbin/waagent /usr/sbin/waagent2.0 /etc/waagent.conf /var/log/waagent.log; do
-        local full_path="$MOUNT_DIR$path"
-        [[ -e "$full_path" ]] && mv "$full_path" "${full_path}.disable" 2>/dev/null && log_success "Disabled $path"
-    done
-}
-
+    
 disable_azure_cloudinit_datasource() {
     log_info "Disabling Azure cloud-init datasource configs..."
     local cfg_dir="$MOUNT_DIR/etc/cloud/cloud.cfg.d"

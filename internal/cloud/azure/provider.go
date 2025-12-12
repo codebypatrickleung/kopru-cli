@@ -114,6 +114,21 @@ func (p *Provider) GetComputeOSDiskName(ctx context.Context, resourceGroup, comp
 	return *vm.Properties.StorageProfile.OSDisk.Name, nil
 }
 
+// GetComputeOSDiskSizeGB retrieves the OS disk size in GB from a Compute instance.
+func (p *Provider) GetComputeOSDiskSizeGB(ctx context.Context, resourceGroup, computeName string) (int64, error) {
+	vm, err := p.GetComputeInfo(ctx, resourceGroup, computeName)
+	if err != nil {
+		return 0, err
+	}
+	if vm.Properties == nil || vm.Properties.StorageProfile == nil || vm.Properties.StorageProfile.OSDisk == nil {
+		return 0, fmt.Errorf("compute instance storage profile not found")
+	}
+	if vm.Properties.StorageProfile.OSDisk.DiskSizeGB == nil {
+		return 0, fmt.Errorf("OS disk size property is not available in Azure VM")
+	}
+	return int64(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB), nil
+}
+
 // GetComputeDataDiskNames retrieves the names of all data disks attached to a Compute instance.
 func (p *Provider) GetComputeDataDiskNames(ctx context.Context, resourceGroup, computeName string) ([]string, error) {
 	vm, err := p.GetComputeInfo(ctx, resourceGroup, computeName)
