@@ -29,22 +29,21 @@ type Config struct {
 	OCIImageName                string
 	OCIImageOS                  string
 	OCIImageOSVersion           string
+	OCIImageEnableUEFI          bool
 	OCIInstanceName             string
 	OCIRegion                   string
 	OCIAvailabilityDomain       string
 	TemplateOutputDir           string
-	SkipTemplateDeploy          bool
 	SkipPrereq                  bool
 	SkipExport                  bool
 	SkipConvert                 bool
 	SkipConfigure               bool
 	SkipUpload                  bool
-	SkipImport                  bool
 	SkipDDExport                bool
 	SkipDDImport                bool
 	SkipTemplate                bool
+	SkipTemplateDeploy          bool
 	SkipVerify                  bool
-	DiskMappingFile             string
 	Debug                       bool
 }
 
@@ -57,7 +56,6 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("oci_instance_name", defaultInstanceName)
 	viper.SetDefault("oci_region", "eu-frankfurt-1")
 	viper.SetDefault("template_output_dir", "./template-output")
-	viper.SetDefault("disk_mapping_file", "./disk-mapping.json")
 
 	viper.AutomaticEnv()
 
@@ -102,22 +100,21 @@ func Load(configFile string) (*Config, error) {
 		OCIImageName:                ociImageName,
 		OCIImageOS:                  viper.GetString("oci_image_os"),
 		OCIImageOSVersion:           viper.GetString("oci_image_os_version"),
+		OCIImageEnableUEFI:          viper.GetBool("oci_image_enable_uefi"),
 		OCIInstanceName:             ociInstanceName,
 		OCIRegion:                   viper.GetString("oci_region"),
 		OCIAvailabilityDomain:       viper.GetString("oci_availability_domain"),
 		TemplateOutputDir:           templateOutputDir,
-		SkipTemplateDeploy:          viper.GetBool("skip_template_deploy"),
 		SkipPrereq:                  viper.GetBool("skip_prereq"),
 		SkipExport:                  viper.GetBool("skip_os_export"),
 		SkipConvert:                 viper.GetBool("skip_os_convert"),
 		SkipConfigure:               viper.GetBool("skip_os_configure"),
 		SkipUpload:                  viper.GetBool("skip_os_upload"),
-		SkipImport:                  viper.GetBool("skip_os_import"),
 		SkipDDExport:                viper.GetBool("skip_dd_export"),
 		SkipDDImport:                viper.GetBool("skip_dd_import"),
 		SkipTemplate:                viper.GetBool("skip_template"),
+		SkipTemplateDeploy:          viper.GetBool("skip_template_deploy"),
 		SkipVerify:                  viper.GetBool("skip_verify"),
-		DiskMappingFile:             viper.GetString("disk_mapping_file"),
 		Debug:                       viper.GetBool("debug"),
 	}
 

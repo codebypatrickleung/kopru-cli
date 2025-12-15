@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -114,21 +115,6 @@ func (p *Provider) GetComputeOSDiskName(ctx context.Context, resourceGroup, comp
 	return *vm.Properties.StorageProfile.OSDisk.Name, nil
 }
 
-// GetComputeOSDiskSizeGB retrieves the OS disk size in GB from a Compute instance.
-func (p *Provider) GetComputeOSDiskSizeGB(ctx context.Context, resourceGroup, computeName string) (int64, error) {
-	vm, err := p.GetComputeInfo(ctx, resourceGroup, computeName)
-	if err != nil {
-		return 0, err
-	}
-	if vm.Properties == nil || vm.Properties.StorageProfile == nil || vm.Properties.StorageProfile.OSDisk == nil {
-		return 0, fmt.Errorf("compute instance storage profile not found")
-	}
-	if vm.Properties.StorageProfile.OSDisk.DiskSizeGB == nil {
-		return 0, fmt.Errorf("OS disk size property is not available in Azure VM")
-	}
-	return int64(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB), nil
-}
-
 // GetComputeDataDiskNames retrieves the names of all data disks attached to a Compute instance.
 func (p *Provider) GetComputeDataDiskNames(ctx context.Context, resourceGroup, computeName string) ([]string, error) {
 	vm, err := p.GetComputeInfo(ctx, resourceGroup, computeName)
@@ -149,6 +135,79 @@ func (p *Provider) GetComputeDataDiskNames(ctx context.Context, resourceGroup, c
 	return diskNames, nil
 }
 
+// GetComputeVMSize retrieves the VM size details for a Compute instance.
+func (p *Provider) GetComputeVMSize(ctx context.Context, resourceGroup, computeName string) (*armcompute.VirtualMachineSize, error) {
+	vm, err := p.GetComputeInfo(ctx, resourceGroup, computeName)
+	if err != nil {
+		return nil, err
+	}
+	if vm.Properties == nil || vm.Properties.HardwareProfile == nil || vm.Properties.HardwareProfile.VMSize == nil {
+		return nil, fmt.Errorf("VM hardware profile not found")
+	}
+	vmSizeName := string(*vm.Properties.HardwareProfile.VMSize)
+	location := *vm.Location
+
+	clientFactory, err := armcompute.NewClientFactory(p.subscriptionID, p.credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create compute client factory: %w", err)
+	}
+	sizesClient := clientFactory.NewVirtualMachineSizesClient()
+	pager := sizesClient.NewListPager(location, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list VM sizes: %w", err)
+		}
+		for _, size := range page.Value {
+			if size.Name != nil && *size.Name == vmSizeName {
+				return size, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("VM size %s not found in location %s", vmSizeName, location)
+}
+
+// GetComputeCPUAndMemory retrieves the CPU count and memory in GB for a Compute instance.
+func (p *Provider) GetComputeCPUAndMemory(ctx context.Context, resourceGroup, computeName string) (int32, int32, error) {
+	vmSize, err := p.GetComputeVMSize(ctx, resourceGroup, computeName)
+	if err != nil {
+		return 0, 0, err
+	}
+	if vmSize.NumberOfCores == nil {
+		return 0, 0, fmt.Errorf("number of cores not available for VM size")
+	}
+	if vmSize.MemoryInMB == nil {
+		return 0, 0, fmt.Errorf("memory size not available for VM size")
+	}
+	cpus := *vmSize.NumberOfCores
+	memoryMB := *vmSize.MemoryInMB
+	memoryGB := (memoryMB + 1023) / 1024
+	return cpus, memoryGB, nil
+}
+
+// GetComputeArchitecture retrieves the CPU architecture of a Compute instance.
+// Returns "x86_64" or "ARM64" based on the VM size SKU.
+func (p *Provider) GetComputeArchitecture(ctx context.Context, resourceGroup, computeName string) (string, error) {
+	vm, err := p.GetComputeInfo(ctx, resourceGroup, computeName)
+	if err != nil {
+		return "", err
+	}
+	if vm.Properties == nil || vm.Properties.HardwareProfile == nil || vm.Properties.HardwareProfile.VMSize == nil {
+		return "", fmt.Errorf("VM hardware profile not found")
+	}
+	vmSizeName := string(*vm.Properties.HardwareProfile.VMSize)
+	arm64Patterns := []string{
+		"_Dps", "_Dpls", "_Eps", "_Epls", "_Bps",
+	}
+	vmSizeLower := strings.ToLower(vmSizeName)
+	for _, pattern := range arm64Patterns {
+		if strings.Contains(vmSizeLower, strings.ToLower(pattern)) {
+			return "ARM64", nil
+		}
+	}
+	return "x86_64", nil
+}
+
 // ExportAzureDisk exports an Azure disk by creating a snapshot, generating a SAS URL, and downloading the VHD.
 func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup, exportDir string) (string, error) {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 36)
@@ -157,13 +216,11 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	if len(diskName) > maxDiskNameLen {
 		truncatedDiskName = diskName[:maxDiskNameLen]
 	}
-	
 	snapshotName := fmt.Sprintf("ss-%s-%s", truncatedDiskName, timestamp)
 	vhdFile := filepath.Join(exportDir, fmt.Sprintf("%s.vhd", diskName))
 
 	p.logger.Infof("Creating snapshot: %s", snapshotName)
-	err := p.CreateSnapshot(ctx, resourceGroup, snapshotName, diskName)
-	if err != nil {
+	if err := p.CreateSnapshot(ctx, resourceGroup, snapshotName, diskName); err != nil {
 		return "", fmt.Errorf("failed to create snapshot: %w", err)
 	}
 	p.logger.Success("✓ Snapshot created")
@@ -188,11 +245,9 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	p.logger.Success("✓ SAS URL generated")
 
 	p.logger.Info("Downloading disk (this may take a while)...")
-	err = p.DownloadFromSASURL(ctx, sasURL, vhdFile)
-	if err != nil {
+	if err := p.DownloadFromSASURL(ctx, sasURL, vhdFile); err != nil {
 		return "", fmt.Errorf("failed to download disk: %w", err)
 	}
-
 	p.logger.Successf("✓ Disk downloaded: %s", vhdFile)
 	return vhdFile, nil
 }

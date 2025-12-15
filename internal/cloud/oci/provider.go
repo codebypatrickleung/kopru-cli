@@ -4,7 +4,6 @@ package oci
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os/exec"
 	"strings"
 	"time"
@@ -186,87 +185,9 @@ func (p *Provider) UploadToObjectStorage(ctx context.Context, namespace, bucketN
 	return nil
 }
 
-// ImportCustomImage imports a custom image from Object Storage. operatingSystemVersion is optional but required for Windows images.
-func (p *Provider) ImportCustomImage(ctx context.Context, compartmentID, displayName, namespace, bucketName, objectName, operatingSystem, operatingSystemVersion string) (string, error) {
-	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
-	if err != nil {
-		return "", fmt.Errorf("failed to create compute client: %w", err)
-	}
-	encodedObjectName := url.PathEscape(objectName)
-	sourceURL := fmt.Sprintf("https://objectstorage.%s.oraclecloud.com/n/%s/b/%s/o/%s",
-		p.region, namespace, bucketName, encodedObjectName)
-
-	osPtr := common.String(operatingSystem)
-	imageSourceDetails := core.ImageSourceViaObjectStorageUriDetails{
-		SourceUri:       &sourceURL,
-		OperatingSystem: osPtr,
-	}
-
-	if operatingSystemVersion != "" {
-		imageSourceDetails.OperatingSystemVersion = common.String(operatingSystemVersion)
-	}
-
-	req := core.CreateImageRequest{
-		CreateImageDetails: core.CreateImageDetails{
-			CompartmentId:      &compartmentID,
-			DisplayName:        &displayName,
-			LaunchMode:         core.CreateImageDetailsLaunchModeParavirtualized,
-			ImageSourceDetails: imageSourceDetails,
-		},
-	}
-	resp, err := client.CreateImage(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("failed to create image: %w", err)
-	}
-	imageID := *resp.Image.Id
-	p.logger.Successf("Custom image import for OS %s started: %s", operatingSystem, imageID)
-	p.logger.Info("Image import can take a while to complete")
-	return imageID, nil
-}
-
-// WaitForImageAvailable polls the image status until it reaches "AVAILABLE" state.
-func (p *Provider) WaitForImageAvailable(ctx context.Context, imageID string) error {
-	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
-	if err != nil {
-		return fmt.Errorf("failed to create compute client: %w", err)
-	}
-	p.logger.Infof("Waiting for image %s import to complete...", imageID)
-	pollInterval := 30 * time.Second
-	timeout := 2 * time.Hour
-	startTime := time.Now()
-	for {
-		if time.Since(startTime) > timeout {
-			return fmt.Errorf("timeout waiting for image %s to become available after %v", imageID, timeout)
-		}
-		req := core.GetImageRequest{
-			ImageId: &imageID,
-		}
-		resp, err := client.GetImage(ctx, req)
-		if err != nil {
-			return fmt.Errorf("failed to get image status: %w", err)
-		}
-		lifecycleState := resp.Image.LifecycleState
-		p.logger.Debugf("Current image lifecycle state: %s", lifecycleState)
-		if lifecycleState == core.ImageLifecycleStateAvailable {
-			p.logger.Successf("Image import completed successfully and is now AVAILABLE")
-			return nil
-		}
-		if lifecycleState == core.ImageLifecycleStateDeleted ||
-			lifecycleState == core.ImageLifecycleStateDisabled {
-			return fmt.Errorf("image import %s failed with state: %s", imageID, lifecycleState)
-		}
-		p.logger.Infof("Image status: %s - waiting %v before next check...", lifecycleState, pollInterval)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
-}
-
 // GetLocalInstanceID retrieves the OCID of the local OCI instance.
 func (p *Provider) GetLocalInstanceID(ctx context.Context) (string, error) {
-	cmd := exec.Command("oci-metadata", "--get", "/instance/id", "--value-only")
+	cmd := exec.CommandContext(ctx, "oci-metadata", "--get", "/instance/id", "--value-only")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get instance ID from metadata service: %w", err)
