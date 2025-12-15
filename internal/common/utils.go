@@ -194,44 +194,49 @@ func GetComputeOSDiskSizeGB(qcow2File string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to get QCOW2 info: %w", err)
 	}
-	
 	const bytesPerGB = 1024 * 1024 * 1024
-	
-	// Parse the output to extract virtual size
-	// Example output line: "virtual size: 30 GiB (32212254720 bytes)"
-	// or with comma separators: "virtual size: 30 GiB (32,212,254,720 bytes)"
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "virtual size:") {
-			// Extract the bytes value from parentheses
 			start := strings.Index(line, "(")
 			end := strings.Index(line, "bytes)")
 			if start != -1 && end != -1 && end > start {
 				bytesStr := strings.TrimSpace(line[start+1 : end])
-				// Remove comma separators if present
 				bytesStr = strings.ReplaceAll(bytesStr, ",", "")
 				var bytes int64
 				if _, err := fmt.Sscanf(bytesStr, "%d", &bytes); err != nil {
 					return 0, fmt.Errorf("failed to parse virtual size bytes: %w", err)
 				}
-				// Convert bytes to GB (rounded up)
 				sizeGB := (bytes + bytesPerGB - 1) / bytesPerGB
 				return sizeGB, nil
 			}
 		}
 	}
-	
 	return 0, fmt.Errorf("virtual size not found in qemu-img output")
 }
 
 // ExecuteOSConfigScript executes an OS configuration script from the scripts/os-config directory.
 func ExecuteOSConfigScript(mountDir, osType, sourcePlatform string, log *logger.Logger) error {
-	if osType == "Ubuntu" && sourcePlatform == "azure" {
-		return executeScript(mountDir, "ubuntu_azure_to_oci.sh", log, true)
+	if sourcePlatform == "azure" && IsLinuxOS(osType) {
+		return executeScript(mountDir, "generic_linux_azure_to_oci.sh", log, true)
 	}
-	// Skip OS configuration for all other OS types (Windows, Red Hat, etc.)
 	log.Infof("Skipping OS configuration for OS type '%s'", osType)
 	return nil
+}
+
+// IsLinuxOS checks if the given operating system string is a Linux-based OS.
+func IsLinuxOS(operatingSystem string) bool {
+	osLower := strings.ToLower(strings.TrimSpace(operatingSystem))
+	linuxOSTypes := []string{
+		"ubuntu", "rhel", "centos", "almalinux", "rocky linux",
+		"oracle linux", "debian", "suse", "generic linux",
+	}
+	for _, linuxOS := range linuxOSTypes {
+		if osLower == linuxOS {
+			return true
+		}
+	}
+	return false
 }
 
 // executeScript executes a bash script with the mount directory as argument.
