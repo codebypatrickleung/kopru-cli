@@ -15,7 +15,7 @@ import (
 
 var (
 	cfgFile string
-	version = "0.1.2"
+	version = "0.1.4"
 )
 
 func main() {
@@ -49,7 +49,9 @@ func init() {
 		{"oci-subnet-id", "", "OCI subnet OCID", ""},
 		{"oci-bucket-name", "", "OCI Object Storage bucket name", ""},
 		{"oci-image-name", "", "OCI custom image name", ""},
-		{"oci-image-os", "", "OS type for OCI adjustments (Ubuntu, Windows)", "Ubuntu"},
+		{"oci-image-os", "", "OS type for OCI (Ubuntu, Windows, Debian, Oracle Linux, AlmaLinux, CentOS, RHEL, Rocky Linux, SUSE, Generic Linux)", ""},
+		{"oci-image-os-version", "", "OS version for OCI (e.g., 20.04, 22.04, 2019, 2022)", ""},
+		{"oci-image-enable-uefi", "", "Enable UEFI for OCI image (true or false)", "false"},
 		{"oci-instance-name", "", "OCI instance name", ""},
 		{"oci-availability-domain", "", "OCI availability domain", ""},
 		{"template-output-dir", "", "Directory for template files", "./template-output"},
@@ -68,7 +70,6 @@ func init() {
 		{"skip-os-convert", "Skip QCOW2 conversion"},
 		{"skip-os-configure", "Skip image configuration"},
 		{"skip-os-upload", "Skip image upload to OCI"},
-		{"skip-os-import", "Skip custom image import"},
 		{"skip-dd-export", "Skip data disk export"},
 		{"skip-dd-import", "Skip data disk import"},
 		{"skip-template", "Skip template generation"},
@@ -90,6 +91,8 @@ func init() {
 		"OCI_BUCKET_NAME":                "oci-bucket-name",
 		"OCI_IMAGE_NAME":                 "oci-image-name",
 		"OCI_IMAGE_OS":                   "oci-image-os",
+		"OCI_IMAGE_OS_VERSION":           "oci-image-os-version",
+		"OCI_IMAGE_ENABLE_UEFI":         "oci-image-enable-uefi",
 		"OCI_INSTANCE_NAME":              "oci-instance-name",
 		"OCI_AVAILABILITY_DOMAIN":        "oci-availability-domain",
 		"SKIP_PREREQ":                    "skip-prereq",
@@ -97,7 +100,6 @@ func init() {
 		"SKIP_OS_CONVERT":                "skip-os-convert",
 		"SKIP_OS_CONFIGURE":              "skip-os-configure",
 		"SKIP_OS_UPLOAD":                 "skip-os-upload",
-		"SKIP_OS_IMPORT":                 "skip-os-import",
 		"SKIP_DD_EXPORT":                 "skip-dd-export",
 		"SKIP_DD_IMPORT":                 "skip-dd-import",
 		"SKIP_TEMPLATE":                  "skip-template",

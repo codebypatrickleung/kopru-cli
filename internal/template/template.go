@@ -14,25 +14,48 @@ import (
 
 const DefaultAvailabilityDomain = "1"
 
+// OCI Flex shape resource constraints
+const (
+	MinOCPUs              = 1  // Minimum OCPUs for OCI Flex shapes
+	DefaultOCPUs          = 1  // Default OCPUs when source VM config is unavailable
+	DefaultMemoryGB       = 12 // Default memory in GB when source VM config is unavailable
+	MinMemoryPerOCPU      = 1  // Minimum GB of memory per OCPU
+	MaxMemoryPerOCPU      = 64 // Maximum GB of memory per OCPU
+)
+
+// uefiSchemaData is the JSON configuration for enabling UEFI_64 firmware in OCI image capability schema
+const uefiSchemaData = `{\"values\": [\"UEFI_64\"],\"defaultValue\": \"UEFI_64\",\"descriptorType\": \"enumstring\",\"source\": \"IMAGE\"}`
+
+// defaultImageCapabilitySchemaVersion is the fallback version when no global schemas are available
+const defaultImageCapabilitySchemaVersion = "1"
+
 // OCIGenerator handles template generation for OCI.
 type OCIGenerator struct {
 	config                *config.Config
 	logger                *logger.Logger
-	importedImageID       string
+	namespace             string
+	objectName            string
 	dataDiskSnapshotIDs   []string
 	dataDiskSnapshotNames []string
 	bootVolumeSizeGB      int64
+	vmCPUs                int32
+	vmMemoryGB            int32
+	vmArchitecture        string
 }
 
 // NewOCIGenerator creates a new OCI template generator.
-func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64) *OCIGenerator {
+func NewOCIGenerator(cfg *config.Config, log *logger.Logger, namespace, objectName string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string) *OCIGenerator {
 	return &OCIGenerator{
 		config:                cfg,
 		logger:                log,
-		importedImageID:       importedImageID,
+		namespace:             namespace,
+		objectName:            objectName,
 		dataDiskSnapshotIDs:   dataDiskSnapshotIDs,
 		dataDiskSnapshotNames: dataDiskSnapshotNames,
 		bootVolumeSizeGB:      bootVolumeSizeGB,
+		vmCPUs:                vmCPUs,
+		vmMemoryGB:            vmMemoryGB,
+		vmArchitecture:        vmArchitecture,
 	}
 }
 
@@ -53,6 +76,55 @@ func formatTemplateList(items []string) string {
 	}
 	b.WriteString("]")
 	return b.String()
+}
+
+// selectOCIShape determines the appropriate OCI shape based on the architecture.
+// For x86_64: VM.Standard.E5.Flex (AMD EPYC or Intel Xeon)
+// For ARM64: VM.Standard.A1.Flex (Ampere Altra)
+func (g *OCIGenerator) selectOCIShape() string {
+	if g.vmArchitecture == "ARM64" {
+		g.logger.Infof("Selecting ARM64 shape (VM.Standard.A1.Flex) based on source VM architecture")
+		return "VM.Standard.A1.Flex"
+	}
+	g.logger.Infof("Selecting x86_64 shape (VM.Standard.E5.Flex) based on source VM architecture")
+	return "VM.Standard.E5.Flex"
+}
+
+// calculateOCIResources determines the appropriate OCPU and memory configuration for OCI.
+// For x86_64 (E5.Flex): 1 OCPU minimum, memory ratio 1-64 GB per OCPU
+// For ARM64 (A1.Flex): 1 OCPU minimum, memory ratio 1-64 GB per OCPU
+func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
+	// If no source VM configuration is available, use defaults
+	if g.vmCPUs == 0 || g.vmMemoryGB == 0 {
+		g.logger.Warning(fmt.Sprintf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB))
+		return DefaultOCPUs, DefaultMemoryGB
+	}
+	
+	// Azure CPUs typically map to OCPUs
+	ocpus = g.vmCPUs
+	memoryGB = g.vmMemoryGB
+	
+	// Ensure minimum OCPUs
+	if ocpus < MinOCPUs {
+		ocpus = MinOCPUs
+	}
+	
+	// OCI Flex shapes support 1-64 GB memory per OCPU
+	// Ensure memory is within valid range
+	minMemory := ocpus * MinMemoryPerOCPU
+	maxMemory := ocpus * MaxMemoryPerOCPU
+	
+	if memoryGB < minMemory {
+		g.logger.Infof("Adjusting memory from %d GB to minimum %d GB for %d OCPUs", memoryGB, minMemory, ocpus)
+		memoryGB = minMemory
+	} else if memoryGB > maxMemory {
+		g.logger.Infof("Adjusting memory from %d GB to maximum %d GB for %d OCPUs", memoryGB, maxMemory, ocpus)
+		memoryGB = maxMemory
+	}
+	
+	g.logger.Infof("Mapped Azure VM (%d CPUs, %d GB) to OCI (%d OCPUs, %d GB)", g.vmCPUs, g.vmMemoryGB, ocpus, memoryGB)
+	
+	return ocpus, memoryGB
 }
 
 // GenerateTemplate generates all template configuration files.
@@ -87,13 +159,13 @@ func (g *OCIGenerator) DeployTemplate() error {
 	dir := g.config.TemplateOutputDir
 
 	steps := []struct {
-		msg    string
-		args   []string
-		succ   string
+		msg     string
+		args    []string
+		succ    string
 	}{
 		{"Running tofu init...", []string{"-chdir=" + dir, "init"}, "✓ OpenTofu initialized"},
 		{"Running tofu plan...", []string{"-chdir=" + dir, "plan", "-out=tfplan"}, "✓ OpenTofu plan created"},
-		{"Running tofu apply (this may take several minutes)...", []string{"-chdir=" + dir, "apply", "-auto-approve", "tfplan"}, "Instance deployed with OpenTofu"},
+		{"Running tofu apply (this may take a while)...", []string{"-chdir=" + dir, "apply", "-auto-approve", "tfplan"}, "Instance deployed with OpenTofu"},
 	}
 	for _, step := range steps {
 		g.logger.Info(step.msg)
@@ -147,9 +219,35 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "image_id" {
-  description = "The OCID of the custom image to use for the instance"
+variable "namespace" {
+  description = "The Object Storage namespace"
   type        = string
+}
+
+variable "bucket_name" {
+  description = "The Object Storage bucket name containing the image"
+  type        = string
+}
+
+variable "object_name" {
+  description = "The name of the image object in Object Storage"
+  type        = string
+}
+
+variable "image_name" {
+  description = "The display name for the custom image"
+  type        = string
+}
+
+variable "operating_system" {
+  description = "The operating system of the image"
+  type        = string
+}
+
+variable "operating_system_version" {
+  description = "The operating system version of the image"
+  type        = string
+  default     = ""
 }
 
 variable "instance_ad_number" {
@@ -224,7 +322,9 @@ variable "freeform_tags" {
 }
 
 func (g *OCIGenerator) generateMainTF() error {
-	content := `# --------------------------------------------------------------------------------------------
+	// Build the base content
+	var b strings.Builder
+	b.WriteString(`# --------------------------------------------------------------------------------------------
 # OCI Instance Configuration
 # --------------------------------------------------------------------------------------------
 
@@ -240,7 +340,68 @@ data "oci_identity_availability_domain" "ad" {
   ad_number      = var.instance_ad_number
 }
 
-resource "oci_core_instance" "kopru_instance" {
+`)
+
+	// Add image import resource
+	imageImportSection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
+# Custom Image Import from Object Storage
+# --------------------------------------------------------------------------------------------
+# This resource imports the custom image from Object Storage.
+# Terraform will handle the image creation and wait for it to become available.
+# --------------------------------------------------------------------------------------------
+
+resource "oci_core_image" "imported_image" {
+  compartment_id = var.compartment_id
+  display_name   = var.image_name
+  launch_mode    = "PARAVIRTUALIZED"
+
+  image_source_details {
+    source_type = "objectStorageTuple"
+    namespace_name   = var.namespace
+    bucket_name      = var.bucket_name
+    object_name      = var.object_name
+    operating_system = var.operating_system
+    operating_system_version = var.operating_system_version
+  }
+}
+
+`)
+	b.WriteString(imageImportSection)
+
+	// Add UEFI capability schema resources if UEFI is enabled
+	if g.config.OCIImageEnableUEFI {
+		uefiSection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
+# UEFI Image Capability Schema Configuration
+# --------------------------------------------------------------------------------------------
+# This section configures the image capability schema to enable UEFI_64 firmware for the
+# imported image. This is only created when UEFI boot mode is enabled in the configuration.
+# --------------------------------------------------------------------------------------------
+
+data "oci_core_compute_global_image_capability_schemas" "image_capability_schemas" {
+  compartment_id = null
+}
+
+locals {
+  global_image_capability_schemas = data.oci_core_compute_global_image_capability_schemas.image_capability_schemas.compute_global_image_capability_schemas
+  # Select the first available schema version, or use a default if none exist
+  schema_version_name = length(local.global_image_capability_schemas) > 0 ? local.global_image_capability_schemas[0].current_version_name : "%s"
+  image_schema_data = {
+    "Compute.Firmware" = "%s"
+  }
+}
+
+resource "oci_core_compute_image_capability_schema" "worker_image_capability_schema" {
+  compartment_id                                      = var.compartment_id
+  compute_global_image_capability_schema_version_name = local.schema_version_name
+  image_id                                            = oci_core_image.imported_image.id
+  schema_data                                         = local.image_schema_data
+}
+
+`, defaultImageCapabilitySchemaVersion, uefiSchemaData)
+		b.WriteString(uefiSection)
+	}
+
+	b.WriteString(`resource "oci_core_instance" "kopru_instance" {
   compartment_id      = var.compartment_id
   availability_domain = data.oci_identity_availability_domain.ad.name
   display_name        = var.instance_name
@@ -256,7 +417,7 @@ resource "oci_core_instance" "kopru_instance" {
 
   source_details {
 	source_type = "image"
-	source_id   = var.image_id
+	source_id   = oci_core_image.imported_image.id
 	boot_volume_size_in_gbs = var.boot_volume_size_in_gbs
   }
 
@@ -293,14 +454,25 @@ resource "oci_core_volume_attachment" "data_volume_attachments" {
   display_name    = "attachment-${local.data_volume_names[count.index]}"
   depends_on      = [oci_core_instance.kopru_instance]
 }
-`
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "main.tf"), []byte(content), 0644)
+`)
+
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "main.tf"), []byte(b.String()), 0644)
 }
 
 func (g *OCIGenerator) generateOutputsTF() error {
 	content := `# --------------------------------------------------------------------------------------------
 # Output Definitions
 # --------------------------------------------------------------------------------------------
+
+output "imported_image_id" {
+  description = "The OCID of the imported custom image"
+  value       = oci_core_image.imported_image.id
+}
+
+output "imported_image_state" {
+  description = "The lifecycle state of the imported image"
+  value       = oci_core_image.imported_image.state
+}
 
 output "instance_id" {
   description = "The OCID of the created instance"
@@ -354,16 +526,7 @@ func (g *OCIGenerator) generateTFVars() error {
 	if ad == "" {
 		ad = DefaultAvailabilityDomain
 	}
-	imageID := "REPLACE_WITH_IMPORTED_IMAGE_OCID"
-	imageIDComment := ""
-	if g.importedImageID != "" {
-		imageID = g.importedImageID
-	} else {
-		imageIDComment = fmt.Sprintf(`# IMPORTANT: Replace the placeholder below with the actual image OCID after import completes
-# You can find the image OCID in the OCI console or by running:
-#   oci compute image list --compartment-id %s --display-name "%s"
-`, g.config.OCICompartmentID, g.config.OCIImageName)
-	}
+	
 	snapshotIDsList := formatTemplateList(g.dataDiskSnapshotIDs)
 	snapshotNamesList := formatTemplateList(g.dataDiskSnapshotNames)
 
@@ -372,6 +535,12 @@ func (g *OCIGenerator) generateTFVars() error {
 	if g.bootVolumeSizeGB > bootVolumeSize {
 		bootVolumeSize = g.bootVolumeSizeGB
 	}
+	
+	// Select OCI shape based on architecture
+	ociShape := g.selectOCIShape()
+	
+	// Calculate OCPU and memory based on source VM configuration
+	ocpus, memoryGB := g.calculateOCIResources()
 
 	content := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
 # Variable Values for OpenTofu
@@ -382,13 +551,18 @@ func (g *OCIGenerator) generateTFVars() error {
 
 compartment_id      = "%s"
 subnet_id           = "%s"
-%simage_id            = "%s"
+namespace           = "%s"
+bucket_name         = "%s"
+object_name         = "%s"
+image_name          = "%s"
+operating_system    = "%s"
+operating_system_version = "%s"
 instance_ad_number  = "%s"
 
 instance_name      = "%s"
-instance_shape     = "VM.Standard.E5.Flex"
-instance_ocpus     = 1
-instance_memory_gb = 12
+instance_shape     = "%s"
+instance_ocpus     = %d
+instance_memory_gb = %d
 assign_public_ip   = true
 
 boot_volume_size_in_gbs = %d
@@ -401,19 +575,32 @@ data_disk_names        = %s
 freeform_tags = {
   "created-by"    = "kopru"
   "source-image"  = "%s"
+  "source-cpus"   = "%d"
+  "source-memory-gb" = "%d"
+  "source-architecture" = "%s"
 }
 `,
 		g.config.OCICompartmentID,
 		g.config.OCISubnetID,
-		imageIDComment,
-		imageID,
+		g.namespace,
+		g.config.OCIBucketName,
+		g.objectName,
+		g.config.OCIImageName,
+		g.config.OCIImageOS,
+		g.config.OCIImageOSVersion,
 		ad,
 		g.config.OCIInstanceName,
+		ociShape,
+		ocpus,
+		memoryGB,
 		bootVolumeSize,
 		g.config.OCIRegion,
 		snapshotIDsList,
 		snapshotNamesList,
-		imageID,
+		g.config.OCIImageName,
+		g.vmCPUs,
+		g.vmMemoryGB,
+		g.vmArchitecture,
 	)
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "terraform.tfvars"), []byte(content), 0644)
 }
