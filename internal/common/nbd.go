@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -17,8 +16,6 @@ const (
 	MaxMountRetries     = 3
 	RetryDelaySeconds   = 2
 )
-
-var nbdMutex sync.Mutex
 
 func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 	if _, err := os.Stat(imageFile); os.IsNotExist(err) {
@@ -30,23 +27,18 @@ func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 
 	attemptedDevices := make(map[string]bool)
 	for deviceIndex := 0; deviceIndex < MaxNBDDevices; deviceIndex++ {
-		nbdMutex.Lock()
 		nbdDevice, err := GetFreeNBDDevice()
 		if err != nil {
-			nbdMutex.Unlock()
 			return "", "", fmt.Errorf("failed to get free NBD device: %w", err)
 		}
 		if attemptedDevices[nbdDevice] {
-			nbdMutex.Unlock()
 			continue
 		}
 		attemptedDevices[nbdDevice] = true
 
 		if err := ConnectImageToNBD(imageFile, nbdDevice); err != nil {
-			nbdMutex.Unlock()
 			continue
 		}
-		nbdMutex.Unlock()
 
 		_ = ScanAndActivateLVM(nbdDevice)
 
@@ -433,4 +425,10 @@ func GetLVMVolumesForNBD(nbdDevice string) []string {
 		}
 	}
 	return volumes
+}
+
+// HasFilesystem returns true if blkid detects a filesystem on the device.
+func HasFilesystem(device string) bool {
+	output, err := exec.Command("sudo", "blkid", device).Output()
+	return err == nil && len(output) > 0
 }

@@ -227,3 +227,24 @@ uninstall_azure_linux_agent() {
     fi
     cleanup_bind_mounts "${bind_mounts[@]}"
 }
+
+# Disable Hyper-V KVP daemon for all OS families
+disable_hyperv_kvp_daemon() {
+    log_info "Disabling Hyper-V KVP daemon service..."
+    local systemd_dir service_link
+    
+    systemd_dir="$MOUNT_DIR/etc/systemd/system"
+    service_link="$systemd_dir/multi-user.target.wants/hv-kvp-daemon.service"
+    
+    # Check if service is enabled (symlink exists)
+    if [[ -L "$service_link" ]]; then
+        log_info "Found enabled hv-kvp-daemon.service, disabling..."
+        rm -f "$service_link" \
+            && log_success "✓ Disabled hv-kvp-daemon.service" \
+            || log_warning "Failed to disable hv-kvp-daemon.service"
+    else
+        log_info "hv-kvp-daemon.service not enabled, skipping..."
+    fi
+    
+    return 0
+}
