@@ -7,7 +7,7 @@
 # Usage: ./setup-environment.sh
 # --------------------------------------------------------------------------------------------
 
-set -e
+set -euo pipefail
 
 check_oracle_linux_version() {
     if [[ ! -f /etc/oracle-release ]]; then
@@ -25,8 +25,8 @@ check_oracle_linux_version() {
 
 verify_core_utilities() {
     echo "Verifying core system utilities..."
-    core_utils=(sudo df lsblk blkid mount umount modprobe mkdir rm mv dd oci-metadata)
-    missing_utils=()
+    local core_utils=(sudo df lsblk blkid mount umount modprobe mkdir rm mv dd oci-metadata)
+    local missing_utils=()
     for util in "${core_utils[@]}"; do
         if ! command -v "$util" &>/dev/null; then
             missing_utils+=("$util")
@@ -35,7 +35,7 @@ verify_core_utilities() {
             "$util" --version 2>/dev/null | head -n 1 || echo "version info not available"
         fi
     done
-    if [ ${#missing_utils[@]} -ne 0 ]; then
+    if (( ${#missing_utils[@]} )); then
         echo "Error: Missing utilities: ${missing_utils[*]}"
         echo "Install packages: util-linux, kmod, coreutils"
         exit 1
@@ -44,7 +44,7 @@ verify_core_utilities() {
 }
 
 install_qemu_tools() {
-    if ! command -v qemu-img &>/dev/null || ! command -v qemu-nbd &>/dev/null; then
+    if ! command -v qemu-img &>/dev/null; then
         echo "Installing QEMU tools..."
         if command -v dnf &>/dev/null; then
             sudo dnf install -y qemu-img qemu-kvm-tools 2>/dev/null || sudo dnf install -y qemu-kvm
@@ -53,6 +53,19 @@ install_qemu_tools() {
         fi
     else
         echo "✓ QEMU tools already installed."
+    fi
+}
+
+install_libguestfs() {
+    if ! command -v guestfish &>/dev/null; then
+        echo "Installing libguestfs tools..."
+        if command -v dnf &>/dev/null; then
+            sudo dnf install -y libguestfs-tools
+        else
+            sudo yum install -y libguestfs-tools
+        fi
+    else
+        echo "✓ libguestfs tools already installed."
     fi
 }
 
@@ -72,6 +85,7 @@ install_opentofu() {
 main() {
     check_oracle_linux_version
     verify_core_utilities
+    install_libguestfs
     install_qemu_tools
     install_opentofu
     echo "Kopru environment setup complete."
