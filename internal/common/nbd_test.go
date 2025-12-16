@@ -2,7 +2,6 @@ package common
 
 import (
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -69,36 +68,3 @@ func TestIsNBDDeviceConnectedNonExistent(t *testing.T) {
 	}
 }
 
-// TestNBDMutexProtection verifies that the mutex protects concurrent access
-// to NBD device allocation and prevents race conditions.
-func TestNBDMutexProtection(t *testing.T) {
-	// This test verifies that nbdMutex is properly defined and accessible
-	// The actual race condition protection is tested during runtime with
-	// concurrent goroutines in the data disk import workflow
-	
-	// Test that multiple goroutines can safely call GetFreeNBDDevice
-	// without causing data races (this would be caught by go test -race)
-	var wg sync.WaitGroup
-	deviceChan := make(chan string, 3)
-	
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			device, err := GetFreeNBDDevice()
-			if err == nil && device != "" {
-				deviceChan <- device
-			}
-		}()
-	}
-	
-	wg.Wait()
-	close(deviceChan)
-	
-	// Verify that devices returned (if any) have the correct format
-	for device := range deviceChan {
-		if !strings.HasPrefix(device, "/dev/nbd") {
-			t.Errorf("GetFreeNBDDevice returned invalid format in concurrent call: %s", device)
-		}
-	}
-}

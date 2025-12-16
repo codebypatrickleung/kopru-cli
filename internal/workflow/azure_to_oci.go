@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/codebypatrickleung/kopru-cli/internal/cloud/azure"
 	"github.com/codebypatrickleung/kopru-cli/internal/cloud/oci"
@@ -16,8 +15,6 @@ import (
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 	"github.com/codebypatrickleung/kopru-cli/internal/template"
 )
-
-const MaxConcurrentDataDiskMigrations = 2
 
 // AzureToOCIHandler implements the workflow for migrating Compute instances from Azure to OCI.
 type AzureToOCIHandler struct {
@@ -367,7 +364,6 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Infof("Compute instance OS type: %s", h.config.OCIImageOS)
 	h.logger.Infof("Compute instance OS version: %s", h.config.OCIImageOSVersion)
 	h.logger.Infof("Found %d data disk(s) to import", len(vhdFiles))
-	h.logger.Infof("Using parallel processing with max %d concurrent migrations", MaxConcurrentDataDiskMigrations)
 	h.logger.Info("Retrieving local instance information...")
 	localInstanceID, err := h.ociProvider.GetLocalInstanceID(ctx)
 	if err != nil {
@@ -381,156 +377,109 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Infof("Availability domain: %s", localAvailabilityDomain)
 
 	var (
-		createdVolumes      []string
-		createdVolumesMutex sync.Mutex
-		snapshotIDs         []string
-		snapshotNames       []string
-		snapshotMutex       sync.Mutex
-		failedCount         int
-		failedCountMutex    sync.Mutex
-		deviceDetectionMutex sync.Mutex
+		createdVolumes []string
+		snapshotIDs    []string
+		snapshotNames  []string
+		failedCount    int
 	)
 
-	semaphore := make(chan struct{}, MaxConcurrentDataDiskMigrations)
-	var wg sync.WaitGroup
-
 	for _, vhdFile := range vhdFiles {
-		wg.Add(1)
-		go func(vhdFile string) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
+		h.logger.Info("=========================================")
+		h.logger.Infof("Processing: %s", filepath.Base(vhdFile))
+		h.logger.Info("=========================================")
 
-			h.logger.Info("=========================================")
-			h.logger.Infof("Processing: %s", filepath.Base(vhdFile))
-			h.logger.Info("=========================================")
+		baseDiskName := strings.TrimSuffix(filepath.Base(vhdFile), ".vhd")
+		rawFile := strings.TrimSuffix(vhdFile, ".vhd") + ".raw"
+		h.logger.Infof("Converting VHD to RAW format: %s", filepath.Base(rawFile))
+		if err := common.ConvertVHDToRAW(vhdFile, rawFile); err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to convert VHD to RAW: %v", err))
+			failedCount++
+			continue
+		}
+		h.logger.Success("VHD converted to RAW format")
 
-			mountDir, targetPartition, err := common.MountQCOW2Image(vhdFile)
-			if err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to mount VHD: %v", err))
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
+		diskSizeGB, err := common.GetFileSizeGB(rawFile)
+		if err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to get disk size: %v", err))
+			failedCount++
+			continue
+		}
+
+		h.logger.Infof("Creating OCI volume of size %d GB...", diskSizeGB)
+		volumeName := fmt.Sprintf("bv-%s", baseDiskName)
+		h.logger.Infof("Volume name: %s", volumeName)
+
+		volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
+		if err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to create OCI volume: %v", err))
+			failedCount++
+			continue
+		}
+		h.logger.Successf("Created volume: %s", volumeID)
+
+		createdVolumes = append(createdVolumes, volumeID)
+
+		beforeDevices, err := common.ListBlockDevices()
+		if err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to list block devices: %v", err))
+			failedCount++
+			continue
+		}
+
+		h.logger.Info("Attaching volume to local instance...")
+		attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
+		if err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to attach volume: %v", err))
+			failedCount++
+			continue
+		}
+		h.logger.Infof("Volume attached (attachment: %s)", attachmentID)
+
+		attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
+		if err != nil {
+			h.logger.Warning(fmt.Sprintf("Could not detect attached device: %v", err))
+			if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
+				h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
 			}
-			h.logger.Success("Mounted partition successfully")
+			failedCount++
+			continue
+		}
+		h.logger.Infof("Attached device: %s", attachedDevice)
 
-			diskSizeGB, err := common.GetFileSizeGB(vhdFile)
-			if err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to get disk size: %v", err))
-				common.CleanupNBDMount(mountDir)
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
+		h.logger.Infof("Copying data from RAW file to %s...", attachedDevice)
+		h.logger.Info("  This may take a while depending on disk size...")
+		if err := common.CopyDataWithDD(rawFile, attachedDevice); err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to copy data: %v", err))
+			if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
+				h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
 			}
+			failedCount++
+			continue
+		}
+		h.logger.Success("Data copy completed")
 
-			h.logger.Infof("Creating OCI volume of size %d GB...", diskSizeGB)
-			baseDiskName := strings.TrimSuffix(filepath.Base(vhdFile), ".vhd")
-			volumeName := fmt.Sprintf("bv-%s", baseDiskName)
-			h.logger.Infof("Volume name: %s", volumeName)
+		h.logger.Info("Detaching volume...")
+		if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to detach volume: %v", err))
+		} else {
+			h.logger.Info("Volume detached")
+		}
 
-			volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
-			if err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to create OCI volume: %v", err))
-				common.CleanupNBDMount(mountDir)
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
-			}
-			h.logger.Successf("Created volume: %s", volumeID)
+		snapshotName := fmt.Sprintf("ss-%s", baseDiskName)
+		h.logger.Infof("Creating snapshot: %s...", snapshotName)
+		snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeID, snapshotName)
+		if err != nil {
+			h.logger.Warning(fmt.Sprintf("Failed to create snapshot: %v", err))
+			failedCount++
+			continue
+		}
+		h.logger.Successf("Created snapshot: %s", snapshotID)
 
-			createdVolumesMutex.Lock()
-			createdVolumes = append(createdVolumes, volumeID)
-			createdVolumesMutex.Unlock()
+		snapshotIDs = append(snapshotIDs, snapshotID)
+		snapshotNames = append(snapshotNames, snapshotName)
 
-			deviceDetectionMutex.Lock()
-			beforeDevices, err := common.ListBlockDevices()
-			if err != nil {
-				deviceDetectionMutex.Unlock()
-				h.logger.Warning(fmt.Sprintf("Failed to list block devices: %v", err))
-				common.CleanupNBDMount(mountDir)
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
-			}
-
-			h.logger.Info("Attaching volume to local instance...")
-			attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
-			if err != nil {
-				deviceDetectionMutex.Unlock()
-				h.logger.Warning(fmt.Sprintf("Failed to attach volume: %v", err))
-				common.CleanupNBDMount(mountDir)
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
-			}
-			h.logger.Infof("Volume attached (attachment: %s)", attachmentID)
-
-			attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
-			deviceDetectionMutex.Unlock()
-			if err != nil {
-				h.logger.Warning(fmt.Sprintf("Could not detect attached device: %v", err))
-				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-					h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
-				}
-				common.CleanupNBDMount(mountDir)
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
-			}
-			h.logger.Infof("Attached device: %s", attachedDevice)
-
-			h.logger.Infof("Copying data from %s to %s...", targetPartition, attachedDevice)
-			h.logger.Info("  This may take a while depending on disk size...")
-			if err := common.CopyDataWithDD(targetPartition, attachedDevice); err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to copy data: %v", err))
-				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-					h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
-				}
-				common.CleanupNBDMount(mountDir)
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
-			}
-			h.logger.Success("Data copy completed")
-
-			common.CleanupNBDMount(mountDir)
-
-			h.logger.Info("Detaching volume...")
-			if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to detach volume: %v", err))
-			} else {
-				h.logger.Info("Volume detached")
-			}
-
-			snapshotName := fmt.Sprintf("ss-%s", baseDiskName)
-			h.logger.Infof("Creating snapshot: %s...", snapshotName)
-			snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeID, snapshotName)
-			if err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to create snapshot: %v", err))
-				failedCountMutex.Lock()
-				failedCount++
-				failedCountMutex.Unlock()
-				return
-			}
-			h.logger.Successf("Created snapshot: %s", snapshotID)
-
-			snapshotMutex.Lock()
-			snapshotIDs = append(snapshotIDs, snapshotID)
-			snapshotNames = append(snapshotNames, snapshotName)
-			snapshotMutex.Unlock()
-
-			h.logger.Successf("Processed: %s", filepath.Base(vhdFile))
-		}(vhdFile)
+		h.logger.Successf("Processed: %s", filepath.Base(vhdFile))
 	}
-
-	wg.Wait()
 
 	h.dataDiskSnapshotIDs = snapshotIDs
 	h.dataDiskSnapshotNames = snapshotNames
