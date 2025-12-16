@@ -35,69 +35,6 @@ detect_os_version() {
     fi
 }
 
-# Create bind mounts for chroot operations
-create_bind_mounts() {
-    log_info "Creating bind mounts for chroot..."
-    local mounts=("$@") mounted=()
-    for mount in "${mounts[@]}"; do
-        if mountpoint -q "$MOUNT_DIR/$mount" 2>/dev/null; then
-            log_info "✓ $mount already mounted, skipping..."
-            mounted+=("$mount")
-        elif mount --bind "/$mount" "$MOUNT_DIR/$mount" 2>/dev/null; then
-            mounted+=("$mount")
-            log_info "✓ Mounted $mount"
-        else
-            log_warning "Failed to bind $mount"
-            cleanup_bind_mounts "${mounted[@]}"
-            return 1
-        fi
-    done
-    echo "${mounted[@]}"
-}
-
-# Cleanup bind mounts
-cleanup_bind_mounts() {
-    log_info "Cleaning up bind mounts..."
-    local mounts=("$@")
-    for ((i=${#mounts[@]}-1; i>=0; i--)); do
-        local mount_path="$MOUNT_DIR/${mounts[$i]}"
-        if mountpoint -q "$mount_path" 2>/dev/null; then
-            umount "$mount_path" 2>/dev/null \
-                && log_info "✓ Unmounted ${mounts[$i]}" \
-                || { log_warning "Failed to unmount ${mounts[$i]}, retrying with lazy unmount..."; umount -l "$mount_path" 2>/dev/null && log_info "✓ Lazy unmounted ${mounts[$i]}"; }
-        fi
-    done
-    log_success "Bind mount cleanup complete"
-}
-
-# Setup DNS resolution in chroot environment
-setup_chroot_dns() {
-    log_info "Setting up DNS resolution in chroot..."
-    local resolv="$MOUNT_DIR/etc/resolv.conf"
-    if [[ -e "$resolv" || -L "$resolv" ]]; then
-        if [[ ! -e "$resolv.bak" ]]; then
-            mv "$resolv" "$resolv.bak"
-            log_info "✓ Backed up existing resolv.conf"
-        else
-            log_info "✓ resolv.conf.bak already exists, skipping backup"
-        fi
-    fi
-    cp /etc/resolv.conf "$resolv"
-    log_success "DNS resolution setup complete"
-}
-
-# Restore original DNS configuration
-restore_chroot_dns() {
-    log_info "Restoring original resolv.conf..."
-    local resolv="$MOUNT_DIR/etc/resolv.conf"
-    if [[ -e "$resolv.bak" ]]; then
-        mv "$resolv.bak" "$resolv"
-        log_success "Restored original resolv.conf"
-    else
-        log_info "No backup resolv.conf found, skipping restore"
-    fi
-}
-
 # Disable Azure-specific udev rules
 disable_azure_udev_rules() {
     log_info "Disabling Azure-specific udev rules..."
@@ -200,32 +137,48 @@ add_oci_chrony_config() {
 
 # Uninstall Azure Linux Agent (OS-specific)
 uninstall_azure_linux_agent() {
-    log_info "Uninstalling Azure Linux Agent..."
-    local os_family bind_mounts mounted
+    log_info "Disabling Azure Linux Agent..."
+    local os_family
     os_family=$(detect_os_family)
-    bind_mounts=("proc" "sys" "dev" "dev/pts")
-    IFS=' ' read -r -a mounted <<< "$(create_bind_mounts "${bind_mounts[@]}")"
-    [[ ${#mounted[@]} -eq 0 ]] && { log_warning "Failed to create bind mounts for Azure agent uninstall"; return 0; }
+    
     if [[ "$os_family" == "debian" ]]; then
-        if chroot "$MOUNT_DIR" /bin/bash -c "dpkg -s walinuxagent >/dev/null 2>&1"; then
-            log_info "Found WALinux Agent package, uninstalling..."
-            chroot "$MOUNT_DIR" /bin/bash -c "apt-get remove -y walinuxagent >/dev/null 2>&1" \
-                && log_success "Successfully uninstalled WALinux Agent" \
-                || log_warning "Failed to uninstall WALinux Agent in chroot"
-        else
-            log_info "WALinux Agent not installed, skipping uninstall"
-        fi
-    elif [[ "$os_family" == "rhel" ]]; then
+        # For Debian-based systems, disable walinuxagent by renaming service files
         local systemd_dir="$MOUNT_DIR/etc/systemd/system"
-        if [[ -d "$systemd_dir/multi-user.target.wants" && -L "$systemd_dir/multi-user.target.wants/waagent.service" ]]; then
-            rm -f "$systemd_dir/multi-user.target.wants/waagent.service" \
-                && log_success "Disabled waagent.service" \
+        local walinuxagent_service="$systemd_dir/multi-user.target.wants/walinuxagent.service"
+        
+        if [[ -L "$walinuxagent_service" ]]; then
+            log_info "Found walinuxagent.service symlink, disabling..."
+            mv "$walinuxagent_service" "${walinuxagent_service}.disable" 2>/dev/null \
+                && log_success "✓ Disabled walinuxagent.service" \
+                || log_warning "Failed to disable walinuxagent.service"
+        else
+            log_info "walinuxagent.service not found or not enabled, skipping..."
+        fi
+        
+        # Also check for direct service file
+        local service_file="$MOUNT_DIR/lib/systemd/system/walinuxagent.service"
+        if [[ -f "$service_file" && ! -f "${service_file}.disable" ]]; then
+            mv "$service_file" "${service_file}.disable" 2>/dev/null \
+                && log_success "✓ Disabled walinuxagent.service file" \
+                || log_warning "Failed to disable walinuxagent.service file"
+        fi
+        
+    elif [[ "$os_family" == "rhel" ]]; then
+        # For RHEL-based systems, disable waagent by renaming service symlink
+        local systemd_dir="$MOUNT_DIR/etc/systemd/system"
+        local waagent_service="$systemd_dir/multi-user.target.wants/waagent.service"
+        
+        if [[ -L "$waagent_service" ]]; then
+            log_info "Found waagent.service symlink, disabling..."
+            mv "$waagent_service" "${waagent_service}.disable" 2>/dev/null \
+                && log_success "✓ Disabled waagent.service" \
                 || log_warning "Failed to disable waagent.service"
         else
-            log_info "waagent.service not enabled, skipping..."
+            log_info "waagent.service not found or not enabled, skipping..."
         fi
     fi
-    cleanup_bind_mounts "${bind_mounts[@]}"
+    
+    log_success "Azure Linux Agent disabled"
 }
 
 # Disable Hyper-V KVP daemon for all OS families
