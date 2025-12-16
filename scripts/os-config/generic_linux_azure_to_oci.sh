@@ -32,6 +32,7 @@ main() {
     disable_azure_udev_rules         || log_warning "Failed to disable Azure udev rules, continuing..."
     disable_azure_cloudinit_datasource || log_warning "Failed to disable Azure cloud-init datasource, continuing..."
     disable_azure_chrony_refclock    || log_warning "Failed to disable Azure chrony refclock, continuing..."
+    disable_hyperv_kvp_daemon        || log_warning "Failed to disable Hyper-V KVP daemon, continuing..."
     uninstall_azure_linux_agent      || log_warning "Failed to uninstall Azure Linux agent, continuing..."
 
     # Phase 2: Add OCI-specific configurations
