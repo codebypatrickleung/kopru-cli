@@ -19,7 +19,7 @@ Kopru is a command-line tool written in Go that automates the migration of Compu
 - **Operating System**: (more OSes coming soon)
   - Ubuntu 22.04 LTS (x86_64) 
   - Ubuntu 24.04 LTS (x86_64)
-  - Debian 13 Pixie (x86_64)
+  - Debian 13 Trixie (x86_64)
   - Red Hat Enterprise Linux 9.4 (x86_64)
   - Windows Server 2022 Datacenter 
 - **Execution Environment**: Oracle Linux 9+ in OCI
