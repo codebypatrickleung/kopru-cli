@@ -20,10 +20,12 @@ Kopru is a command-line tool written in Go that automates the migration of Compu
   - Ubuntu 22.04 LTS (x86_64) 
   - Ubuntu 24.04 LTS (x86_64)
   - Debian 13 Pixie (x86_64)
+  - Red Hat Enterprise Linux 9.4 (x86_64)
+  - Windows Server 2022 Datacenter 
 - **Execution Environment**: Oracle Linux 9+ in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
-If your source VM has data disks attached, Kopru will automatically migrate and reattach them in OCI. For seamless operation, ensure your data disks are mounted using UUIDs rather than device paths (e.g., `/dev/sdb1`). If device paths are used, you may need to update `/etc/fstab` after migration to reflect the new device mappings in OCI.
+If your source VM has data disks attached, Kopru will automatically migrate and reattach them in OCI. For seamless operation, ensure your data disks are mounted using UUIDs or LVM rather than device paths (e.g., `/dev/sdb1`). If device paths are used, you may need to update `/etc/fstab` after migration to reflect the new device mappings in OCI.
 
 ## Quick Start
 
@@ -99,28 +101,17 @@ Kopru does not handle authentication directly. Set up authentication for both Az
 
 6. Run Kopru using one of these methods:
 
-Step 1-5 are the hardest part! Now, run Kopru to start the migration. There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet. So basically, just tell Kopru what Azure VM to migrate and where to put it in OCI.
+Step 1-5 are the hardest part! Now, run Kopru to start the migration. There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet. So basically, just tell Kopru what Azure VM to migrate and where to put it in OCI. Here's an example using environment variables:
 
   - **Environment variables**:
     ```bash
-    export AZURE_COMPUTE_NAME="my-vm"
-    export AZURE_RESOURCE_GROUP="my-rg"
+    export AZURE_COMPUTE_NAME="azure-vm"
+    export AZURE_RESOURCE_GROUP="azure-vm-rg"
     export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..."
     export OCI_SUBNET_ID="ocid1.subnet.oc1..."
     export OCI_IMAGE_OS="Ubuntu"
     export OCI_IMAGE_OS_VERSION="24.04"
     ./kopru
-    ```
-  - **Command-line flags**:
-    ```bash
-    ./kopru --azure-compute-name my-vm \
-         --azure-resource-group my-rg \
-         --oci-compartment-id "ocid1.compartment.oc1..." \
-         --oci-subnet-id "ocid1.subnet.oc1..."
-    ```
-  - **Configuration file**:
-    ```bash
-    ./kopru --config /path/to/kopru-config.env
     ```
 
 For a full list of parameters, see `./kopru --help` or refer to the [Configuration Parameters](kopru-config.env.template) document.

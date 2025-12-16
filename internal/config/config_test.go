@@ -228,3 +228,34 @@ func TestOCIImageNameNaming(t *testing.T) {
 		})
 	}
 }
+
+func TestOCIImageEnableUEFI(t *testing.T) {
+	tests := []struct {
+		name          string
+		envValue      string
+		expectedValue bool
+	}{
+		{"UEFI enabled", "true", true},
+		{"UEFI disabled", "false", false},
+		{"UEFI not set defaults to false", "", false},
+		{"UEFI set to 1", "1", true},
+		{"UEFI set to 0", "0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Clearenv()
+			if tt.envValue != "" {
+				os.Setenv("OCI_IMAGE_ENABLE_UEFI", tt.envValue)
+			}
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Failed to load config: %v", err)
+			}
+			if cfg.OCIImageEnableUEFI != tt.expectedValue {
+				t.Errorf("Expected OCIImageEnableUEFI to be %v, got %v", tt.expectedValue, cfg.OCIImageEnableUEFI)
+			}
+		})
+	}
+}
+
