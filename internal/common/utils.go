@@ -141,12 +141,6 @@ func SliceDifference(a, b []string) []string {
 	return diff
 }
 
-// HasFilesystem returns true if blkid detects a filesystem on the device.
-func HasFilesystem(device string) bool {
-	output, err := exec.Command("sudo", "blkid", device).Output()
-	return err == nil && len(output) > 0
-}
-
 // ListBlockDevices returns a list of block device names (without /dev/ prefix).
 func ListBlockDevices() ([]string, error) {
 	output, err := exec.Command("lsblk", "-dn", "-o", "NAME").Output()
@@ -184,6 +178,23 @@ func ConvertVHDToQCOW2(vhdFile, qcow2File string) error {
 	}
 	if output, err := RunCommand("qemu-img", "resize", qcow2File, "+5M"); err != nil {
 		return fmt.Errorf("qemu-img resize failed: %w\nOutput: %s", err, output)
+	}
+	return nil
+}
+
+// ConvertVHDToRAW converts a VHD file to RAW format. The VHD file is always kept for auditing purposes.
+func ConvertVHDToRAW(vhdFile, rawFile string) error {
+	if vhdFile == "" {
+		return fmt.Errorf("VHD file path cannot be empty")
+	}
+	if rawFile == "" {
+		return fmt.Errorf("RAW file path cannot be empty")
+	}
+	if _, err := os.Stat(vhdFile); os.IsNotExist(err) {
+		return fmt.Errorf("VHD file not found: %s", vhdFile)
+	}
+	if output, err := RunCommand("qemu-img", "convert", "-f", "vpc", "-O", "raw", vhdFile, rawFile); err != nil {
+		return fmt.Errorf("qemu-img convert to RAW failed: %w\nOutput: %s", err, output)
 	}
 	return nil
 }
