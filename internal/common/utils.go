@@ -18,7 +18,7 @@ import (
 
 const (
 	OCIMinVolumeSizeGB = 50  // Minimum volume size in GB for OCI block volumes
-	MinDiskSpaceGB     = 100 // Recommended minimum disk space in GB for migration operations
+	MinDiskSpaceGB     = 500 // Recommended minimum disk space in GB for migration operations
 )
 
 // IsWindowsOS checks if the given operating system string is exactly "Windows" (case-insensitive).
