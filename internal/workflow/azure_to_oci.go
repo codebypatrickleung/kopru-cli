@@ -125,6 +125,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	} else {
 		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}
+	h.logger.Warning("You can safely ignore this warning if your available disk space exceeds the total size of your VM disks plus 50 GB.")
 	if err := h.azureProvider.CheckComputeExists(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName); err != nil {
 		return fmt.Errorf("azure Compute instance check failed: %w", err)
 	}
