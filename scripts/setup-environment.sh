@@ -48,8 +48,6 @@ install_qemu_tools() {
         echo "Installing QEMU tools..."
         if command -v dnf &>/dev/null; then
             sudo dnf install -y qemu-img qemu-kvm-tools 2>/dev/null || sudo dnf install -y qemu-kvm
-        else
-            sudo yum install -y qemu-img qemu-kvm-tools 2>/dev/null || sudo yum install -y qemu-kvm
         fi
     else
         echo "✓ QEMU tools already installed."
@@ -69,8 +67,6 @@ install_libguestfs() {
         echo "Installing libguestfs tools..."
         if command -v dnf &>/dev/null; then
             sudo dnf install -y libguestfs-tools
-        else
-            sudo yum install -y libguestfs-tools
         fi
     else
         echo "✓ libguestfs tools already installed."
@@ -82,8 +78,6 @@ install_go(){
         echo "Installing latest Go..."
         if command -v dnf &>/dev/null; then
             sudo dnf install -y golang
-        else
-            sudo yum install -y golang
         fi
     else
         echo "✓ Go already installed."
@@ -109,9 +103,6 @@ install_oci_cli() {
         if command -v dnf &>/dev/null; then
             dnf -y install oraclelinux-developer-release-el9
             dnf -y install python39-oci-cli
-        else
-            yum -y install oraclelinux-developer-release-el9
-            yum -y install python39-oci-cli
         fi
     else
         echo "✓ OCI CLI already installed."
