@@ -53,10 +53,9 @@ install_qemu_tools() {
         echo "✓ QEMU tools already installed."
     fi
 
-    if systemctl list-unit-files | grep -q virtqemud.socket; then
+    if systemctl list-unit-files | grep virtqemud; then
         echo "Starting virtqemud.socket..."
-        systemctl enable virtqemud.socket
-        systemctl start virtqemud.socket
+        systemctl enable --now virtqemud.socket
     else
         echo "virtqemud.socket not found, skipping start."
     fi
