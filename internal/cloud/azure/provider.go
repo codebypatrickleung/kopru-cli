@@ -226,18 +226,18 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	p.logger.Success("✓ Snapshot created")
 
 	defer func() {
-		p.logger.Info("Cleaning up snapshot...")
+		p.logger.Infof("Cleaning up snapshot: %s", snapshotName)
 		if err := p.RevokeSnapshotAccess(ctx, resourceGroup, snapshotName); err != nil {
 			p.logger.Warning(fmt.Sprintf("Failed to revoke access to snapshot: %v", err))
 		}
 		if err := p.DeleteSnapshot(ctx, resourceGroup, snapshotName); err != nil {
 			p.logger.Warning(fmt.Sprintf("Failed to delete snapshot %s - manual cleanup may be required", snapshotName))
 		} else {
-			p.logger.Success("✓ Snapshot cleaned up")
+			p.logger.Successf("✓ Snapshot deleted: %s", snapshotName)
 		}
 	}()
 
-	p.logger.Info("Generating SAS URL...")
+	p.logger.Infof("Generating SAS URL for snapshot: %s", snapshotName)
 	sasURL, err := p.GrantSnapshotAccess(ctx, resourceGroup, snapshotName, 7200)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS URL: %w", err)
