@@ -66,6 +66,7 @@ func TestConfigValidate(t *testing.T) {
 				AzureResourceGroup: "test-rg",
 				OCICompartmentID:   "ocid1.compartment.test",
 				OCISubnetID:        "ocid1.subnet.test",
+				OCIRegion:          "us-ashburn-1",
 			},
 			expectError: false,
 		},
@@ -77,6 +78,7 @@ func TestConfigValidate(t *testing.T) {
 				AzureResourceGroup: "test-rg",
 				OCICompartmentID:   "ocid1.compartment.test",
 				OCISubnetID:        "ocid1.subnet.test",
+				OCIRegion:          "us-ashburn-1",
 			},
 			expectError: true,
 		},
@@ -87,6 +89,19 @@ func TestConfigValidate(t *testing.T) {
 				TargetPlatform:     "oci",
 				AzureComputeName:   "test-vm",
 				AzureResourceGroup: "test-rg",
+				OCISubnetID:        "ocid1.subnet.test",
+				OCIRegion:          "us-ashburn-1",
+			},
+			expectError: true,
+		},
+		{
+			name: "missing OCI region",
+			config: &Config{
+				SourcePlatform:     "azure",
+				TargetPlatform:     "oci",
+				AzureComputeName:   "test-vm",
+				AzureResourceGroup: "test-rg",
+				OCICompartmentID:   "ocid1.compartment.test",
 				OCISubnetID:        "ocid1.subnet.test",
 			},
 			expectError: true,
@@ -125,8 +140,8 @@ func TestConfigDefaults(t *testing.T) {
 	if cfg.OCIImageName != "kopru-image" {
 		t.Errorf("Expected default OCIImageName to be 'kopru-image', got '%s'", cfg.OCIImageName)
 	}
-	if cfg.OCIRegion != "eu-frankfurt-1" {
-		t.Errorf("Expected default OCIRegion to be 'eu-frankfurt-1', got '%s'", cfg.OCIRegion)
+	if cfg.OCIRegion != "" {
+		t.Errorf("Expected OCIRegion to be empty (no default), got '%s'", cfg.OCIRegion)
 	}
 }
 

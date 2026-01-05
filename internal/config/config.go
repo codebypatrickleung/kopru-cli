@@ -54,7 +54,6 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("oci_bucket_name", "kopru-bucket")
 	viper.SetDefault("oci_image_name", defaultImageName)
 	viper.SetDefault("oci_instance_name", defaultInstanceName)
-	viper.SetDefault("oci_region", "eu-frankfurt-1")
 	viper.SetDefault("template_output_dir", "./template-output")
 
 	viper.AutomaticEnv()
@@ -137,6 +136,9 @@ func (c *Config) Validate() error {
 		}
 		if c.OCISubnetID == "" {
 			return fmt.Errorf("oci_subnet_id is required for OCI target platform")
+		}
+		if c.OCIRegion == "" {
+			return fmt.Errorf("oci_region is required for OCI target platform")
 		}
 	}
 	return nil
