@@ -289,7 +289,6 @@ variable "assign_public_ip" {
 variable "region" {
   description = "OCI region"
   type        = string
-  default     = "eu-frankfurt-1"
 }
 
 variable "data_disk_snapshot_ids" {

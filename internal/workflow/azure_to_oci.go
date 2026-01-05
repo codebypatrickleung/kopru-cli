@@ -106,6 +106,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("Azure Compute Name: %s", h.config.AzureComputeName)
 	h.logger.Infof("OCI Compartment ID: %s", h.config.OCICompartmentID)
 	h.logger.Infof("OCI Subnet ID: %s", h.config.OCISubnetID)
+	h.logger.Infof("OCI Region: %s", h.config.OCIRegion)
 	h.logger.Infof("OCI Bucket Name: %s", h.config.OCIBucketName)
 	h.logger.Infof("OCI Image Name: %s", h.config.OCIImageName)
 	h.logger.Infof("OCI Image OS: %s", h.config.OCIImageOS)
@@ -177,6 +178,10 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 		return fmt.Errorf("operating system version (OCI_IMAGE_OS_VERSION) is required when migrating a Windows instance")
 	}
 	h.logger.Successf("✓ Compute instance OS version: %s", h.config.OCIImageOSVersion)
+	if h.config.OCIRegion == "" {
+		return fmt.Errorf("OCI region (OCI_REGION) is required")
+	}
+	h.logger.Successf("✓ OCI region configured: %s", h.config.OCIRegion)
 	isStopped, err := h.azureProvider.CheckComputeIsStopped(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		return fmt.Errorf("failed to check Compute instance state: %w", err)
