@@ -2,7 +2,6 @@
 # Linux Azure to OCI OS Configuration Script
 set -euo pipefail
 
-# Source common utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
@@ -19,26 +18,23 @@ fi
 
 main() {
     log_info "Starting generic Linux Azure to OCI configuration..."
-
-    # Detect OS information
     local os_family os_version
     os_family=$(detect_os_family)
     log_info "Detected OS family: $os_family"
     os_version=$(detect_os_version)
     log_info "Detected OS version: $os_version"
 
-    # Phase 1: Disable Azure-specific configurations
     log_info "=== Phase 1: Disabling Azure-specific configurations ==="
-    disable_azure_udev_rules         || log_warning "Failed to disable Azure udev rules, continuing..."
+    disable_azure_udev_rules           || log_warning "Failed to disable Azure udev rules, continuing..."
     disable_azure_cloudinit_datasource || log_warning "Failed to disable Azure cloud-init datasource, continuing..."
-    disable_azure_chrony_refclock    || log_warning "Failed to disable Azure chrony refclock, continuing..."
-    disable_hyperv_kvp_daemon        || log_warning "Failed to disable Hyper-V KVP daemon, continuing..."
-    uninstall_azure_linux_agent      || log_warning "Failed to uninstall Azure Linux agent, continuing..."
+    disable_azure_chrony_refclock      || log_warning "Failed to disable Azure chrony refclock, continuing..."
+    disable_azure_hyperv_daemon        || log_warning "Failed to disable Hyper-V KVP daemon, continuing..."
+    disable_azure_linux_agent          || log_warning "Failed to disable Azure Linux agent, continuing..."
 
-    # Phase 2: Add OCI-specific configurations
     log_info "=== Phase 2: Adding OCI-specific configurations ==="
-    add_oci_chrony_config            || log_warning "Failed to add OCI chrony config, continuing..."
-    add_oci_cloudinit_datasource     || log_warning "Failed to add OCI cloud-init datasource, continuing..."
+    add_oci_chrony_config              || log_warning "Failed to add OCI chrony config, continuing..."
+    add_oci_cloudinit_datasource       || log_warning "Failed to add OCI cloud-init datasource, continuing..."
+    add_ssh_host_keys_fix              || log_warning "Failed to add SSH host keys fix, continuing..."
 
     log_success "Generic Linux Azure to OCI configuration complete"
     log_info "Configuration was successful for OS family: $os_family"
