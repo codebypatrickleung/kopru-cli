@@ -111,6 +111,7 @@ Step 1-5 are the hardest part! Now, run Kopru to start the migration. There are 
     export OCI_SUBNET_ID="ocid1.subnet.oc1..."
     export OCI_IMAGE_OS="Ubuntu"
     export OCI_IMAGE_OS_VERSION="24.04"
+    export OCI_REGION="us-ashburn-1" 
     ./kopru &
     ```
 
