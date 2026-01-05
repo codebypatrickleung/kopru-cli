@@ -122,7 +122,7 @@ func (p *Provider) GetComputeDataDiskNames(ctx context.Context, resourceGroup, c
 		return nil, err
 	}
 	if vm.Properties == nil || vm.Properties.StorageProfile == nil {
-		return nil, fmt.Errorf("Compute instance storage profile not found")
+		return nil, fmt.Errorf("compute instance storage profile not found")
 	}
 	var diskNames []string
 	if vm.Properties.StorageProfile.DataDisks != nil {
@@ -233,11 +233,11 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 		if err := p.DeleteSnapshot(ctx, resourceGroup, snapshotName); err != nil {
 			p.logger.Warning(fmt.Sprintf("Failed to delete snapshot %s - manual cleanup may be required", snapshotName))
 		} else {
-			p.logger.Success("✓ Snapshot cleaned up")
+			p.logger.Successf("✓ Snapshot deleted: %s", snapshotName)
 		}
 	}()
 
-	p.logger.Info("Generating SAS URL...")
+	p.logger.Infof("Generating SAS URL for snapshot: %s", snapshotName)
 	sasURL, err := p.GrantSnapshotAccess(ctx, resourceGroup, snapshotName, 7200)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS URL: %w", err)
