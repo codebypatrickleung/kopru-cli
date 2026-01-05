@@ -108,8 +108,8 @@ add_ssh_host_keys_fix() {
     fi
 
     # Only apply fix for Ubuntu and Debian
-    if [[ "$os_id" != "ubuntu" ]]; then
-        log_info "Not Ubuntu, skipping SSH host keys fix..."
+    if [[ "$os_id" != "ubuntu" && "$os_id" != "debian" ]]; then
+        log_info "Not Ubuntu or Debian, skipping SSH host keys fix..."
         return 0
     fi
 
@@ -140,12 +140,15 @@ disable_azure_chrony_refclock() {
     else
         chrony_conf="$MOUNT_DIR/etc/chrony.conf"
     fi
-    target="refclock PHC /dev/ptp_hyperv poll 3 dpoll -2 offset 0"
+    local target="refclock PHC /dev/ptp_hyperv poll 3 dpoll -2 offset 0"
     [[ ! -f "$chrony_conf" ]] && { log_info "Chrony config not found at $chrony_conf, skipping..."; return 0; }
-    grep -q "$target" "$chrony_conf" 2>/dev/null || { log_info "Azure PTP hyperv refclock not found, skipping..."; return 0; }
-    grep -q "^$target$" "$chrony_conf" 2>/dev/null || { log_info "✓ Azure PTP hyperv refclock already disabled"; return 0; }
-    sed -i "s|^$target$|# $target|" "$chrony_conf"
-    log_success "Disabled Azure PTP hyperv refclock"
+
+    if grep -Eq "^$target.*" "$chrony_conf" 2>/dev/null; then
+        sed -i "s|^$target\(.*\)|# $target\1|" "$chrony_conf"
+        log_success "Disabled Azure PTP hyperv refclock ($target ...)"
+    else
+        log_info "Azure PTP hyperv refclock not found, skipping..."
+    fi
 
     return 0
 }
