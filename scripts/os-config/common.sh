@@ -1,13 +1,11 @@
 #!/bin/bash
 # Common functions for OS configuration scripts
 
-# Logging functions
 log_info()    { echo -e "[INFO] $1"; }
 log_success() { echo -e "\033[1;32m[SUCCESS]\033[0m $1"; }
 log_warning() { echo -e "\033[1;33m[WARN]\033[0m $1"; }
 log_error()   { echo -e "\033[1;31m[ERROR]\033[0m $1"; }
 
-# Detect OS family (debian-based or rhel-based)
 detect_os_family() {
     local os_release="$MOUNT_DIR/etc/os-release"
     if [[ -f "$os_release" ]]; then
@@ -24,7 +22,6 @@ detect_os_family() {
     fi
 }
 
-# Detect OS version
 detect_os_version() {
     local os_release="$MOUNT_DIR/etc/os-release"
     if [[ -f "$os_release" ]]; then
@@ -35,7 +32,6 @@ detect_os_version() {
     fi
 }
 
-# Disable Azure-specific udev rules
 disable_azure_udev_rules() {
     log_info "Disabling Azure-specific udev rules..."
     local udev_dir="$MOUNT_DIR/etc/udev/rules.d"
@@ -61,7 +57,6 @@ disable_azure_udev_rules() {
     return 0
 }
 
-# Disable Azure cloud-init datasource configuration
 disable_azure_cloudinit_datasource() {
     log_info "Disabling Azure cloud-init datasource configs..."
     local cfg_dir="$MOUNT_DIR/etc/cloud/cloud.cfg.d"
@@ -86,21 +81,56 @@ disable_azure_cloudinit_datasource() {
     return 0
 }
 
-# Add OCI cloud-init datasource configuration
 add_oci_cloudinit_datasource() {
     log_info "Configuring cloud-init for OCI..."
     local cfg_dir="$MOUNT_DIR/etc/cloud/cloud.cfg.d"
     [[ ! -d "$cfg_dir" ]] && { log_info "cloud.cfg.d directory not found, skipping OCI cloud-init datasource config..."; return 0; }
-    local oci_cfg="$cfg_dir/99_oci.cfg"
-    if [[ -f "$oci_cfg" ]] && grep -q "datasource_list: \[Oracle, None\]" "$oci_cfg" 2>/dev/null; then
+    local oci_cfg="$cfg_dir/90_dpkg.cfg"
+    if [[ -f "$oci_cfg" ]] && grep -q "datasource_list: \[ Oracle \]" "$oci_cfg" 2>/dev/null; then
         log_info "✓ OCI cloud-init datasource already configured"
         return 0
     fi
-    echo "datasource_list: [Oracle, None]" > "$oci_cfg"
+    echo "datasource_list: [ Oracle ]" > "$oci_cfg"
     log_success "Configured cloud-init datasource for OCI"
+
+    return 0
 }
 
-# Disable Azure PTP Hyper-V refclock in chrony config
+add_ssh_host_keys_fix() {
+    log_info "Adding SSH host keys fix for OCI..."
+    local os_release="$MOUNT_DIR/etc/os-release"
+    local os_id
+    if [[ -f "$os_release" ]]; then
+        os_id=$(grep -E '^ID=' "$os_release" | cut -d= -f2 | tr -d '"')
+    else
+        log_info "os-release not found, skipping SSH host keys fix..."
+        return 0
+    fi
+
+    # Only apply fix for Ubuntu and Debian
+    if [[ "$os_id" != "ubuntu" ]]; then
+        log_info "Not Ubuntu, skipping SSH host keys fix..."
+        return 0
+    fi
+
+    local cfg_dir="$MOUNT_DIR/etc/cloud/cloud.cfg.d"
+    [[ ! -d "$cfg_dir" ]] && { log_info "cloud.cfg.d directory not found, skipping SSH host keys fix..."; return 0; }
+    local oci_cfg="$cfg_dir/99_ssh_host_keys_fix.cfg"
+    if [[ -f "$oci_cfg" ]]; then
+        log_info "✓ SSH host keys fix already present"
+        return 0
+    fi
+    cat > "$oci_cfg" <<EOF
+ssh_deletekeys: false
+ssh_genkeytypes:
+  - rsa
+  - ecdsa
+  - ed25519
+EOF
+    log_success "Added SSH host keys fix for OCI"
+    return 0
+}
+
 disable_azure_chrony_refclock() {
     log_info "Disabling Azure PTP Hyper-V refclock in chrony config..."
     local os_family chrony_conf target
@@ -116,9 +146,10 @@ disable_azure_chrony_refclock() {
     grep -q "^$target$" "$chrony_conf" 2>/dev/null || { log_info "✓ Azure PTP hyperv refclock already disabled"; return 0; }
     sed -i "s|^$target$|# $target|" "$chrony_conf"
     log_success "Disabled Azure PTP hyperv refclock"
+
+    return 0
 }
 
-# Add OCI metadata server to chrony config
 add_oci_chrony_config() {
     log_info "Adding OCI metadata server to chrony config..."
     local os_family chrony_conf oci_server
@@ -133,39 +164,50 @@ add_oci_chrony_config() {
     grep -q "^$oci_server$" "$chrony_conf" 2>/dev/null && { log_info "✓ OCI metadata server already present"; return 0; }
     echo "$oci_server" >> "$chrony_conf"
     log_success "Added OCI metadata server to chrony config"
+
+    return 0
 }
 
-# Uninstall Azure Linux Agent (OS-specific)
-uninstall_azure_linux_agent() {
+disable_azure_linux_agent() {
     log_info "Disabling Azure Linux Agent..."
     local os_family
     os_family=$(detect_os_family)
     
     if [[ "$os_family" == "debian" ]]; then
         # For Debian-based systems, disable walinuxagent by renaming service files
-        local systemd_dir="$MOUNT_DIR/etc/systemd/system"
-        local walinuxagent_service="$systemd_dir/multi-user.target.wants/walinuxagent.service"
-        
-        if [[ -L "$walinuxagent_service" ]]; then
+        local walinuxagent_service_etc="$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/walinuxagent.service"
+        if [[ -L "$walinuxagent_service_etc" ]]; then
             log_info "Found walinuxagent.service symlink, disabling..."
-            mv "$walinuxagent_service" "${walinuxagent_service}.disable" 2>/dev/null \
+            mv "$walinuxagent_service_etc" "${walinuxagent_service_etc}.disable" 2>/dev/null \
                 && log_success "✓ Disabled walinuxagent.service" \
                 || log_warning "Failed to disable walinuxagent.service"
         else
             log_info "walinuxagent.service not found or not enabled, skipping..."
         fi
         
-        # Also check for direct service file
-        local service_file="$MOUNT_DIR/lib/systemd/system/walinuxagent.service"
-        if [[ -f "$service_file" && ! -f "${service_file}.disable" ]]; then
-            mv "$service_file" "${service_file}.disable" 2>/dev/null \
+        local walinuxagent_service_lib="$MOUNT_DIR/lib/systemd/system/walinuxagent.service"
+        if [[ -f "$walinuxagent_service_lib" && ! -f "${walinuxagent_service_lib}.disable" ]]; then
+            log_info "Found walinuxagent.service file, disabling..."
+            mv "$walinuxagent_service_lib" "${walinuxagent_service_lib}.disable" 2>/dev/null \
                 && log_success "✓ Disabled walinuxagent.service file" \
                 || log_warning "Failed to disable walinuxagent.service file"
+        else
+            log_info "walinuxagent.service file not found or already disabled, skipping..."
+        fi
+
+        local network_setup_service_lib="$MOUNT_DIR/lib/systemd/system/walinuxagent-network-setup.service"
+        if [[ -f "$network_setup_service_lib" && ! -f "${network_setup_service_lib}.disable" ]]; then
+            log_info "Found walinuxagent-network-setup.service file, disabling..."
+            mv "$network_setup_service_lib" "${network_setup_service_lib}.disable" 2>/dev/null \
+                && log_success "✓ Disabled walinuxagent-network-setup.service" \
+                || log_warning "Failed to disable walinuxagent-network-setup.service"
+        else
+            log_info "walinuxagent-network-setup.service not found or not enabled, skipping..."
         fi
         
     elif [[ "$os_family" == "rhel" ]]; then
         # For RHEL-based systems, disable waagent by renaming service symlink
-        local systemd_dir="$MOUNT_DIR/etc/systemd/system"
+        local systemd_dir="$MOUNT_DIR/lib/systemd/system"
         local waagent_service="$systemd_dir/multi-user.target.wants/waagent.service"
         
         if [[ -L "$waagent_service" ]]; then
@@ -179,24 +221,44 @@ uninstall_azure_linux_agent() {
     fi
     
     log_success "Azure Linux Agent disabled"
+
+    return 0
 }
 
-# Disable Hyper-V KVP daemon for all OS families
-disable_hyperv_kvp_daemon() {
+disable_azure_hyperv_daemon() {
+    log_info "Disabling Hyper-V daemons..."
+
     log_info "Disabling Hyper-V KVP daemon service..."
-    local systemd_dir service_link
-    
-    systemd_dir="$MOUNT_DIR/etc/systemd/system"
-    service_link="$systemd_dir/multi-user.target.wants/hv-kvp-daemon.service"
-    
-    # Check if service is enabled (symlink exists)
-    if [[ -L "$service_link" ]]; then
+    local kvp_service_link="$MOUNT_DIR/lib/systemd/system/hv-kvp-daemon.service"
+    if [[ -f "$kvp_service_link" && ! -f "${kvp_service_link}.disable" ]]; then
         log_info "Found enabled hv-kvp-daemon.service, disabling..."
-        rm -f "$service_link" \
+        mv -f "$kvp_service_link" "${kvp_service_link}.disable" \
             && log_success "✓ Disabled hv-kvp-daemon.service" \
             || log_warning "Failed to disable hv-kvp-daemon.service"
     else
         log_info "hv-kvp-daemon.service not enabled, skipping..."
+    fi
+
+    log_info "Disabling Hyper-V VSS daemon service..."
+    local vss_service_link="$MOUNT_DIR/lib/systemd/system/hv-vss-daemon.service"
+    if [[ -f "$vss_service_link" && ! -f "${vss_service_link}.disable" ]]; then
+        log_info "Found enabled hv-vss-daemon.service, disabling..."
+        mv -f "$vss_service_link" "${vss_service_link}.disable" \
+            && log_success "✓ Disabled hv-vss-daemon.service" \
+            || log_warning "Failed to disable hv-vss-daemon.service"
+    else
+        log_info "hv-vss-daemon.service not enabled, skipping..."
+    fi
+
+    log_info "Disabling Hyper-V fcopy daemon service..."
+    local fcopy_service_link="$MOUNT_DIR/lib/systemd/system/hv-fcopy-daemon.service"
+    if [[ -f "$fcopy_service_link" && ! -f "${fcopy_service_link}.disable" ]]; then
+        log_info "Found enabled hv-fcopy-daemon.service, disabling..."
+        mv -f "$fcopy_service_link" "${fcopy_service_link}.disable" \
+            && log_success "✓ Disabled hv-fcopy-daemon.service" \
+            || log_warning "Failed to disable hv-fcopy-daemon.service"
+    else
+        log_info "hv-fcopy-daemon.service not enabled, skipping..."
     fi
     
     return 0

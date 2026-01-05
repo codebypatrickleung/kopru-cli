@@ -122,7 +122,7 @@ func (p *Provider) GetComputeDataDiskNames(ctx context.Context, resourceGroup, c
 		return nil, err
 	}
 	if vm.Properties == nil || vm.Properties.StorageProfile == nil {
-		return nil, fmt.Errorf("Compute instance storage profile not found")
+		return nil, fmt.Errorf("compute instance storage profile not found")
 	}
 	var diskNames []string
 	if vm.Properties.StorageProfile.DataDisks != nil {
@@ -226,7 +226,7 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	p.logger.Success("✓ Snapshot created")
 
 	defer func() {
-		p.logger.Infof("Cleaning up snapshot: %s", snapshotName)
+		p.logger.Info("Cleaning up snapshot...")
 		if err := p.RevokeSnapshotAccess(ctx, resourceGroup, snapshotName); err != nil {
 			p.logger.Warning(fmt.Sprintf("Failed to revoke access to snapshot: %v", err))
 		}
