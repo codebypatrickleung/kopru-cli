@@ -28,13 +28,14 @@ main() {
     disable_azure_udev_rules           || log_warning "Failed to disable Azure udev rules, continuing..."
     disable_azure_cloudinit_datasource || log_warning "Failed to disable Azure cloud-init datasource, continuing..."
     disable_azure_chrony_refclock      || log_warning "Failed to disable Azure chrony refclock, continuing..."
-    disable_azure_hyperv_daemon        || log_warning "Failed to disable Hyper-V KVP daemon, continuing..."
+    disable_azure_hyperv_daemon        || log_warning "Failed to disable Hyper-V daemon, continuing..."
     disable_azure_linux_agent          || log_warning "Failed to disable Azure Linux agent, continuing..."
 
     log_info "=== Phase 2: Adding OCI-specific configurations ==="
     add_oci_chrony_config              || log_warning "Failed to add OCI chrony config, continuing..."
     add_oci_cloudinit_datasource       || log_warning "Failed to add OCI cloud-init datasource, continuing..."
     add_ssh_host_keys_fix              || log_warning "Failed to add SSH host keys fix, continuing..."
+    auto_relabel_selinux_contexts      || log_warning "Failed to relabel SELinux contexts, continuing..."
 
     log_success "Generic Linux Azure to OCI configuration complete"
     log_info "Configuration was successful for OS family: $os_family"
