@@ -161,11 +161,14 @@ add_oci_chrony_config() {
         chrony_conf="$MOUNT_DIR/etc/chrony/chrony.conf"
     else
         chrony_conf="$MOUNT_DIR/etc/chrony.conf"
+        touch "$MOUNT_DIR/.autorelabel"
+        log_success "Created .autorelabel in guest root for SELinux relabel"
     fi
     oci_server="server 169.254.169.254 iburst"
     [[ ! -f "$chrony_conf" ]] && { log_info "Chrony config not found at $chrony_conf, skipping..."; return 0; }
     grep -q "^$oci_server$" "$chrony_conf" 2>/dev/null && { log_info "✓ OCI metadata server already present"; return 0; }
-    echo "$oci_server" >> "$chrony_conf"
+    sed -i "\$a$oci_server" "$chrony_conf"
+
     log_success "Added OCI metadata server to chrony config"
 
     return 0
@@ -177,9 +180,8 @@ disable_azure_linux_agent() {
     os_family=$(detect_os_family)
     
     if [[ "$os_family" == "debian" ]]; then
-        # For Debian-based systems, disable walinuxagent by renaming service files
         local walinuxagent_service_etc="$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/walinuxagent.service"
-        if [[ -L "$walinuxagent_service_etc" ]]; then
+        if [[ -f "$walinuxagent_service_etc" && ! -f "${walinuxagent_service_etc}.disable" ]]; then
             log_info "Found walinuxagent.service symlink, disabling..."
             mv "$walinuxagent_service_etc" "${walinuxagent_service_etc}.disable" 2>/dev/null \
                 && log_success "✓ Disabled walinuxagent.service" \
@@ -209,17 +211,15 @@ disable_azure_linux_agent() {
         fi
         
     elif [[ "$os_family" == "rhel" ]]; then
-        # For RHEL-based systems, disable waagent by renaming service symlink
-        local systemd_dir="$MOUNT_DIR/lib/systemd/system"
-        local waagent_service="$systemd_dir/multi-user.target.wants/waagent.service"
+        local waagent_service="$MOUNT_DIR/lib/systemd/system/waagent.service"
         
-        if [[ -L "$waagent_service" ]]; then
-            log_info "Found waagent.service symlink, disabling..."
+        if [[ -f "$waagent_service" && ! -f "${waagent_service}.disable" ]]; then
+            log_info "Found waagent.service file, disabling..."
             mv "$waagent_service" "${waagent_service}.disable" 2>/dev/null \
                 && log_success "✓ Disabled waagent.service" \
                 || log_warning "Failed to disable waagent.service"
         else
-            log_info "waagent.service not found or not enabled, skipping..."
+            log_info "waagent.service not found or already disabled, skipping..."
         fi
     fi
     
