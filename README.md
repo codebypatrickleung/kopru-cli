@@ -147,4 +147,4 @@ Kopru creates a log file in the current directory named `kopru-<timestamp>.log`.
 
 ## Conclusion
 
-That's it! Hopefully this guide helps you get started with Kopru for your cloud migrations to OCI. For more details, please feel free to connect with me on [LinkedIn](https://www.linkedin.com/in/pgwl/) or GitHub. Happy migrating! 
+That's it! Hopefully this guide helps you get started with Kopru for your cloud migrations to OCI. As with all migration, ensure health checks and testing are performed post-migration to validate success. For more details, please feel free to connect with me on [LinkedIn](https://www.linkedin.com/in/pgwl/) or GitHub. Happy migrating! 

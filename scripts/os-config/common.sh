@@ -92,12 +92,11 @@ add_oci_cloudinit_datasource() {
     fi
     echo "datasource_list: [ Oracle ]" > "$oci_cfg"
     log_success "Configured cloud-init datasource for OCI"
-
     return 0
 }
 
 add_ssh_host_keys_fix() {
-    log_info "Adding SSH host keys fix for OCI..."
+    log_info "Adding SSH host keys fix..."
     local os_release="$MOUNT_DIR/etc/os-release"
     local os_id
     if [[ -f "$os_release" ]]; then
@@ -107,12 +106,10 @@ add_ssh_host_keys_fix() {
         return 0
     fi
 
-    # Only apply fix for Ubuntu and Debian
     if [[ "$os_id" != "ubuntu" && "$os_id" != "debian" ]]; then
         log_info "Not Ubuntu or Debian, skipping SSH host keys fix..."
         return 0
     fi
-
     local cfg_dir="$MOUNT_DIR/etc/cloud/cloud.cfg.d"
     [[ ! -d "$cfg_dir" ]] && { log_info "cloud.cfg.d directory not found, skipping SSH host keys fix..."; return 0; }
     local oci_cfg="$cfg_dir/99_ssh_host_keys_fix.cfg"
@@ -127,7 +124,7 @@ ssh_genkeytypes:
   - ecdsa
   - ed25519
 EOF
-    log_success "Added SSH host keys fix for OCI"
+    log_success "Added SSH host keys fix"
     return 0
 }
 
@@ -142,14 +139,12 @@ disable_azure_chrony_refclock() {
     fi
     local target="refclock PHC /dev/ptp_hyperv poll 3 dpoll -2 offset 0"
     [[ ! -f "$chrony_conf" ]] && { log_info "Chrony config not found at $chrony_conf, skipping..."; return 0; }
-
     if grep -Eq "^$target.*" "$chrony_conf" 2>/dev/null; then
         sed -i "s|^$target\(.*\)|# $target\1|" "$chrony_conf"
         log_success "Disabled Azure PTP hyperv refclock ($target ...)"
     else
         log_info "Azure PTP hyperv refclock not found, skipping..."
     fi
-
     return 0
 }
 
@@ -161,16 +156,12 @@ add_oci_chrony_config() {
         chrony_conf="$MOUNT_DIR/etc/chrony/chrony.conf"
     else
         chrony_conf="$MOUNT_DIR/etc/chrony.conf"
-        touch "$MOUNT_DIR/.autorelabel"
-        log_success "Created .autorelabel in guest root for SELinux relabel"
     fi
     oci_server="server 169.254.169.254 iburst"
     [[ ! -f "$chrony_conf" ]] && { log_info "Chrony config not found at $chrony_conf, skipping..."; return 0; }
     grep -q "^$oci_server$" "$chrony_conf" 2>/dev/null && { log_info "✓ OCI metadata server already present"; return 0; }
     sed -i "\$a$oci_server" "$chrony_conf"
-
     log_success "Added OCI metadata server to chrony config"
-
     return 0
 }
 
@@ -178,91 +169,61 @@ disable_azure_linux_agent() {
     log_info "Disabling Azure Linux Agent..."
     local os_family
     os_family=$(detect_os_family)
-    
     if [[ "$os_family" == "debian" ]]; then
-        local walinuxagent_service_etc="$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/walinuxagent.service"
-        if [[ -f "$walinuxagent_service_etc" && ! -f "${walinuxagent_service_etc}.disable" ]]; then
-            log_info "Found walinuxagent.service symlink, disabling..."
-            mv "$walinuxagent_service_etc" "${walinuxagent_service_etc}.disable" 2>/dev/null \
-                && log_success "✓ Disabled walinuxagent.service" \
-                || log_warning "Failed to disable walinuxagent.service"
-        else
-            log_info "walinuxagent.service not found or not enabled, skipping..."
-        fi
-        
-        local walinuxagent_service_lib="$MOUNT_DIR/lib/systemd/system/walinuxagent.service"
-        if [[ -f "$walinuxagent_service_lib" && ! -f "${walinuxagent_service_lib}.disable" ]]; then
-            log_info "Found walinuxagent.service file, disabling..."
-            mv "$walinuxagent_service_lib" "${walinuxagent_service_lib}.disable" 2>/dev/null \
-                && log_success "✓ Disabled walinuxagent.service file" \
-                || log_warning "Failed to disable walinuxagent.service file"
-        else
-            log_info "walinuxagent.service file not found or already disabled, skipping..."
-        fi
-
-        local network_setup_service_lib="$MOUNT_DIR/lib/systemd/system/walinuxagent-network-setup.service"
-        if [[ -f "$network_setup_service_lib" && ! -f "${network_setup_service_lib}.disable" ]]; then
-            log_info "Found walinuxagent-network-setup.service file, disabling..."
-            mv "$network_setup_service_lib" "${network_setup_service_lib}.disable" 2>/dev/null \
-                && log_success "✓ Disabled walinuxagent-network-setup.service" \
-                || log_warning "Failed to disable walinuxagent-network-setup.service"
-        else
-            log_info "walinuxagent-network-setup.service not found or not enabled, skipping..."
-        fi
-        
+        local services=(walinuxagent.service walinuxagent-network-setup.service)
+        local targets=(multi-user.target.wants network.target.wants)
     elif [[ "$os_family" == "rhel" ]]; then
-        local waagent_service="$MOUNT_DIR/lib/systemd/system/waagent.service"
-        
-        if [[ -f "$waagent_service" && ! -f "${waagent_service}.disable" ]]; then
-            log_info "Found waagent.service file, disabling..."
-            mv "$waagent_service" "${waagent_service}.disable" 2>/dev/null \
-                && log_success "✓ Disabled waagent.service" \
-                || log_warning "Failed to disable waagent.service"
-        else
-            log_info "waagent.service not found or already disabled, skipping..."
-        fi
+        local services=(waagent.service)
+        local targets=(multi-user.target.wants)
+    else
+        return 0
     fi
-    
-    log_success "Azure Linux Agent disabled"
+    for i in "${!services[@]}"; do
+        local svc="${services[$i]}"
+        local tgt="${targets[$i]}"
+        local link="$MOUNT_DIR/etc/systemd/system/$tgt/$svc"
+        if [[ -L "$link" ]]; then
+            log_info "Found $svc symlink, repointing to /dev/null..."
+            ln -sf /dev/null "$link" \
+                && log_success "✓ Repointed $svc symlink to /dev/null" \
+                || log_warning "Failed to repoint $svc symlink"
+        else
+            log_info "$svc symlink not found, skipping..."
+        fi
+    done
+    return 0
+}
 
+auto_relabel_selinux_contexts() {
+    log_info "Resetting SELinux labels on /etc/ssh/sshd_config..."
+    local selinux_config="$MOUNT_DIR/etc/selinux/config"
+    if [[ ! -f "$selinux_config" ]]; then
+        log_info "SELinux config not found, skipping SELinux label reset..."
+        return 0
+    fi
+    if ! grep -Eq '^\s*SELINUX=(enforcing|permissive)' "$selinux_config"; then
+        log_info "SELinux is not enabled, skipping SELinux label reset..."
+        return 0
+    fi
+    touch "$MOUNT_DIR/.autorelabel" \
+        && log_success "✓ Requested SELinux relabel by creating .autorelabel" \
+        || log_warning "Failed to create .autorelabel for SELinux relabel"
     return 0
 }
 
 disable_azure_hyperv_daemon() {
-    log_info "Disabling Hyper-V daemons..."
-
-    log_info "Disabling Hyper-V KVP daemon service..."
-    local kvp_service_link="$MOUNT_DIR/lib/systemd/system/hv-kvp-daemon.service"
-    if [[ -f "$kvp_service_link" && ! -f "${kvp_service_link}.disable" ]]; then
-        log_info "Found enabled hv-kvp-daemon.service, disabling..."
-        mv -f "$kvp_service_link" "${kvp_service_link}.disable" \
-            && log_success "✓ Disabled hv-kvp-daemon.service" \
-            || log_warning "Failed to disable hv-kvp-daemon.service"
-    else
-        log_info "hv-kvp-daemon.service not enabled, skipping..."
-    fi
-
-    log_info "Disabling Hyper-V VSS daemon service..."
-    local vss_service_link="$MOUNT_DIR/lib/systemd/system/hv-vss-daemon.service"
-    if [[ -f "$vss_service_link" && ! -f "${vss_service_link}.disable" ]]; then
-        log_info "Found enabled hv-vss-daemon.service, disabling..."
-        mv -f "$vss_service_link" "${vss_service_link}.disable" \
-            && log_success "✓ Disabled hv-vss-daemon.service" \
-            || log_warning "Failed to disable hv-vss-daemon.service"
-    else
-        log_info "hv-vss-daemon.service not enabled, skipping..."
-    fi
-
-    log_info "Disabling Hyper-V fcopy daemon service..."
-    local fcopy_service_link="$MOUNT_DIR/lib/systemd/system/hv-fcopy-daemon.service"
-    if [[ -f "$fcopy_service_link" && ! -f "${fcopy_service_link}.disable" ]]; then
-        log_info "Found enabled hv-fcopy-daemon.service, disabling..."
-        mv -f "$fcopy_service_link" "${fcopy_service_link}.disable" \
-            && log_success "✓ Disabled hv-fcopy-daemon.service" \
-            || log_warning "Failed to disable hv-fcopy-daemon.service"
-    else
-        log_info "hv-fcopy-daemon.service not enabled, skipping..."
-    fi
-    
+    local services=(hv-kvp-daemon hv-vss-daemon hv-fcopy-daemon)
+    for svc in "${services[@]}"; do
+        log_info "Disabling Hyper-V ${svc} service..."
+        local svc_link="$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/${svc}.service"
+        if [[ -L "$svc_link" ]]; then
+            log_info "Found ${svc}.service symlink, repointing to /dev/null..."
+            ln -sf /dev/null "$svc_link" \
+                && log_success "✓ Repointed ${svc}.service symlink to /dev/null" \
+                || log_warning "Failed to repoint ${svc}.service symlink"
+        else
+            log_info "${svc}.service symlink not found, skipping..."
+        fi
+    done
     return 0
 }
