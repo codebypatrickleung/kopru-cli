@@ -167,7 +167,8 @@ func (p *Provider) GetComputeVMSize(ctx context.Context, resourceGroup, computeN
 	return nil, fmt.Errorf("VM size %s not found in location %s", vmSizeName, location)
 }
 
-// GetComputeCPUAndMemory retrieves the CPU count and memory in GB for a Compute instance.
+// GetComputeCPUAndMemory retrieves the vCPU count and memory in GB for a Compute instance.
+// Azure VMs are based on vCPU count.
 func (p *Provider) GetComputeCPUAndMemory(ctx context.Context, resourceGroup, computeName string) (int32, int32, error) {
 	vmSize, err := p.GetComputeVMSize(ctx, resourceGroup, computeName)
 	if err != nil {
@@ -196,14 +197,8 @@ func (p *Provider) GetComputeArchitecture(ctx context.Context, resourceGroup, co
 		return "", fmt.Errorf("VM hardware profile not found")
 	}
 	vmSizeName := string(*vm.Properties.HardwareProfile.VMSize)
-	arm64Patterns := []string{
-		"_Dps", "_Dpls", "_Eps", "_Epls", "_Bps",
-	}
-	vmSizeLower := strings.ToLower(vmSizeName)
-	for _, pattern := range arm64Patterns {
-		if strings.Contains(vmSizeLower, strings.ToLower(pattern)) {
-			return "ARM64", nil
-		}
+	if strings.Contains(vmSizeName, "p") {
+		return "ARM64", nil
 	}
 	return "x86_64", nil
 }

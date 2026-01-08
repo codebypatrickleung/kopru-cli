@@ -18,33 +18,33 @@ const (
 
 // Config holds all configuration for the Kopru CLI.
 type Config struct {
-	SourcePlatform              string
-	TargetPlatform              string
-	AzureComputeName            string
-	AzureResourceGroup          string
-	AzureSubscriptionID         string
-	OCICompartmentID            string
-	OCISubnetID                 string
-	OCIBucketName               string
-	OCIImageName                string
-	OCIImageOS                  string
-	OCIImageOSVersion           string
-	OCIImageEnableUEFI          bool
-	OCIInstanceName             string
-	OCIRegion                   string
-	OCIAvailabilityDomain       string
-	TemplateOutputDir           string
-	SkipPrereq                  bool
-	SkipExport                  bool
-	SkipConvert                 bool
-	SkipConfigure               bool
-	SkipUpload                  bool
-	SkipDDExport                bool
-	SkipDDImport                bool
-	SkipTemplate                bool
-	SkipTemplateDeploy          bool
-	SkipVerify                  bool
-	Debug                       bool
+	SourcePlatform        string
+	TargetPlatform        string
+	AzureComputeName      string
+	AzureResourceGroup    string
+	AzureSubscriptionID   string
+	OCICompartmentID      string
+	OCISubnetID           string
+	OCIBucketName         string
+	OCIImageName          string
+	OCIImageOS            string
+	OCIImageOSVersion     string
+	OCIImageEnableUEFI    bool
+	OCIInstanceName       string
+	OCIRegion             string
+	OCIAvailabilityDomain string
+	TemplateOutputDir     string
+	SkipPrereq            bool
+	SkipExport            bool
+	SkipConvert           bool
+	SkipConfigure         bool
+	SkipUpload            bool
+	SkipDDExport          bool
+	SkipDDImport          bool
+	SkipTemplate          bool
+	SkipTemplateDeploy    bool
+	SkipVerify            bool
+	Debug                 bool
 }
 
 // Load initializes configuration from file, environment variables, and flags.
@@ -88,33 +88,33 @@ func Load(configFile string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		SourcePlatform:              viper.GetString("source_platform"),
-		TargetPlatform:              viper.GetString("target_platform"),
-		AzureComputeName:            azureComputeName,
-		AzureResourceGroup:          viper.GetString("azure_resource_group"),
-		AzureSubscriptionID:         viper.GetString("azure_subscription_id"),
-		OCICompartmentID:            viper.GetString("oci_compartment_id"),
-		OCISubnetID:                 viper.GetString("oci_subnet_id"),
-		OCIBucketName:               viper.GetString("oci_bucket_name"),
-		OCIImageName:                ociImageName,
-		OCIImageOS:                  viper.GetString("oci_image_os"),
-		OCIImageOSVersion:           viper.GetString("oci_image_os_version"),
-		OCIImageEnableUEFI:          viper.GetBool("oci_image_enable_uefi"),
-		OCIInstanceName:             ociInstanceName,
-		OCIRegion:                   viper.GetString("oci_region"),
-		OCIAvailabilityDomain:       viper.GetString("oci_availability_domain"),
-		TemplateOutputDir:           templateOutputDir,
-		SkipPrereq:                  viper.GetBool("skip_prereq"),
-		SkipExport:                  viper.GetBool("skip_os_export"),
-		SkipConvert:                 viper.GetBool("skip_os_convert"),
-		SkipConfigure:               viper.GetBool("skip_os_configure"),
-		SkipUpload:                  viper.GetBool("skip_os_upload"),
-		SkipDDExport:                viper.GetBool("skip_dd_export"),
-		SkipDDImport:                viper.GetBool("skip_dd_import"),
-		SkipTemplate:                viper.GetBool("skip_template"),
-		SkipTemplateDeploy:          viper.GetBool("skip_template_deploy"),
-		SkipVerify:                  viper.GetBool("skip_verify"),
-		Debug:                       viper.GetBool("debug"),
+		SourcePlatform:        viper.GetString("source_platform"),
+		TargetPlatform:        viper.GetString("target_platform"),
+		AzureComputeName:      azureComputeName,
+		AzureResourceGroup:    viper.GetString("azure_resource_group"),
+		AzureSubscriptionID:   viper.GetString("azure_subscription_id"),
+		OCICompartmentID:      viper.GetString("oci_compartment_id"),
+		OCISubnetID:           viper.GetString("oci_subnet_id"),
+		OCIBucketName:         viper.GetString("oci_bucket_name"),
+		OCIImageName:          ociImageName,
+		OCIImageOS:            viper.GetString("oci_image_os"),
+		OCIImageOSVersion:     viper.GetString("oci_image_os_version"),
+		OCIImageEnableUEFI:    viper.GetBool("oci_image_enable_uefi"),
+		OCIInstanceName:       ociInstanceName,
+		OCIRegion:             viper.GetString("oci_region"),
+		OCIAvailabilityDomain: viper.GetString("oci_availability_domain"),
+		TemplateOutputDir:     templateOutputDir,
+		SkipPrereq:            viper.GetBool("skip_prereq"),
+		SkipExport:            viper.GetBool("skip_os_export"),
+		SkipConvert:           viper.GetBool("skip_os_convert"),
+		SkipConfigure:         viper.GetBool("skip_os_configure"),
+		SkipUpload:            viper.GetBool("skip_os_upload"),
+		SkipDDExport:          viper.GetBool("skip_dd_export"),
+		SkipDDImport:          viper.GetBool("skip_dd_import"),
+		SkipTemplate:          viper.GetBool("skip_template"),
+		SkipTemplateDeploy:    viper.GetBool("skip_template_deploy"),
+		SkipVerify:            viper.GetBool("skip_verify"),
+		Debug:                 viper.GetBool("debug"),
 	}
 
 	return cfg, nil
