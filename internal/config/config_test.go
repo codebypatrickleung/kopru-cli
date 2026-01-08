@@ -273,4 +273,3 @@ func TestOCIImageEnableUEFI(t *testing.T) {
 		})
 	}
 }
-

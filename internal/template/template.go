@@ -14,13 +14,16 @@ import (
 
 const DefaultAvailabilityDomain = "1"
 
+// Default ARM64 shape for OCI
+const DefaultARM64Shape = "VM.Standard.A1.Flex"
+
 // OCI Flex shape resource constraints
 const (
-	MinOCPUs              = 1  // Minimum OCPUs for OCI Flex shapes
-	DefaultOCPUs          = 1  // Default OCPUs when source VM config is unavailable
-	DefaultMemoryGB       = 12 // Default memory in GB when source VM config is unavailable
-	MinMemoryPerOCPU      = 1  // Minimum GB of memory per OCPU
-	MaxMemoryPerOCPU      = 64 // Maximum GB of memory per OCPU
+	MinOCPUs         = 1  // Minimum OCPUs for OCI Flex shapes
+	DefaultOCPUs     = 1  // Default OCPUs when source VM config is unavailable
+	DefaultMemoryGB  = 12 // Default memory in GB when source VM config is unavailable
+	MinMemoryPerOCPU = 1  // Minimum GB of memory per OCPU
+	MaxMemoryPerOCPU = 64 // Maximum GB of memory per OCPU
 )
 
 // uefiSchemaData is the JSON configuration for enabling UEFI_64 firmware in OCI image capability schema
@@ -83,14 +86,15 @@ func formatTemplateList(items []string) string {
 // For ARM64: VM.Standard.A1.Flex (Ampere Altra)
 func (g *OCIGenerator) selectOCIShape() string {
 	if g.vmArchitecture == "ARM64" {
-		g.logger.Infof("Selecting ARM64 shape (VM.Standard.A1.Flex) based on source VM architecture")
-		return "VM.Standard.A1.Flex"
+		g.logger.Infof("Selecting ARM64 shape (%s) based on source VM architecture", DefaultARM64Shape)
+		return DefaultARM64Shape
 	}
 	g.logger.Infof("Selecting x86_64 shape (VM.Standard.E5.Flex) based on source VM architecture")
 	return "VM.Standard.E5.Flex"
 }
 
 // calculateOCIResources determines the appropriate OCPU and memory configuration for OCI.
+// Azure VMs are based on vCPU count, while OCI is based on OCPU count (1 OCPU = 2 vCPUs).
 // For x86_64 (E5.Flex): 1 OCPU minimum, memory ratio 1-64 GB per OCPU
 // For ARM64 (A1.Flex): 1 OCPU minimum, memory ratio 1-64 GB per OCPU
 func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
@@ -99,21 +103,22 @@ func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
 		g.logger.Warning(fmt.Sprintf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB))
 		return DefaultOCPUs, DefaultMemoryGB
 	}
-	
-	// Azure CPUs typically map to OCPUs
-	ocpus = g.vmCPUs
+
+	// Azure vCPUs need to be converted to OCPUs (1 OCPU = 2 vCPUs)
+	// Round up to the nearest whole number since OCI does not support fractional OCPUs
+	ocpus = (g.vmCPUs + 1) / 2
 	memoryGB = g.vmMemoryGB
-	
+
 	// Ensure minimum OCPUs
 	if ocpus < MinOCPUs {
 		ocpus = MinOCPUs
 	}
-	
+
 	// OCI Flex shapes support 1-64 GB memory per OCPU
 	// Ensure memory is within valid range
 	minMemory := ocpus * MinMemoryPerOCPU
 	maxMemory := ocpus * MaxMemoryPerOCPU
-	
+
 	if memoryGB < minMemory {
 		g.logger.Infof("Adjusting memory from %d GB to minimum %d GB for %d OCPUs", memoryGB, minMemory, ocpus)
 		memoryGB = minMemory
@@ -121,9 +126,9 @@ func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
 		g.logger.Infof("Adjusting memory from %d GB to maximum %d GB for %d OCPUs", memoryGB, maxMemory, ocpus)
 		memoryGB = maxMemory
 	}
-	
-	g.logger.Infof("Mapped Azure VM (%d CPUs, %d GB) to OCI (%d OCPUs, %d GB)", g.vmCPUs, g.vmMemoryGB, ocpus, memoryGB)
-	
+
+	g.logger.Infof("Mapped Azure VM (%d vCPUs, %d GB) to OCI (%d OCPUs, %d GB)", g.vmCPUs, g.vmMemoryGB, ocpus, memoryGB)
+
 	return ocpus, memoryGB
 }
 
@@ -159,9 +164,9 @@ func (g *OCIGenerator) DeployTemplate() error {
 	dir := g.config.TemplateOutputDir
 
 	steps := []struct {
-		msg     string
-		args    []string
-		succ    string
+		msg  string
+		args []string
+		succ string
 	}{
 		{"Running tofu init...", []string{"-chdir=" + dir, "init"}, "✓ OpenTofu initialized"},
 		{"Running tofu plan...", []string{"-chdir=" + dir, "plan", "-out=tfplan"}, "✓ OpenTofu plan created"},
@@ -182,9 +187,6 @@ func (g *OCIGenerator) DeployTemplate() error {
 func (g *OCIGenerator) generateProviderTF() error {
 	content := `# --------------------------------------------------------------------------------------------
 # OCI Provider Configuration
-# --------------------------------------------------------------------------------------------
-# This file configures the OCI provider for OpenTofu.
-# Credentials are sourced from OCI CLI configuration or environment variables.
 # --------------------------------------------------------------------------------------------
 
 terraform {
@@ -345,9 +347,6 @@ data "oci_identity_availability_domain" "ad" {
 	imageImportSection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
 # Custom Image Import from Object Storage
 # --------------------------------------------------------------------------------------------
-# This resource imports the custom image from Object Storage.
-# Terraform will handle the image creation and wait for it to become available.
-# --------------------------------------------------------------------------------------------
 
 resource "oci_core_image" "imported_image" {
   compartment_id = var.compartment_id
@@ -367,13 +366,11 @@ resource "oci_core_image" "imported_image" {
 `)
 	b.WriteString(imageImportSection)
 
-	// Add UEFI capability schema resources if UEFI is enabled
-	if g.config.OCIImageEnableUEFI {
-		uefiSection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
-# UEFI Image Capability Schema Configuration
-# --------------------------------------------------------------------------------------------
-# This section configures the image capability schema to enable UEFI_64 firmware for the
-# imported image. This is only created when UEFI boot mode is enabled in the configuration.
+	// Add image capability schema for UEFI if enabled or if ARM64 (ARM64 requires UEFI)
+	needsUEFI := g.config.OCIImageEnableUEFI || g.vmArchitecture == "ARM64"
+	if needsUEFI {
+		uefiCapabilitySection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
+# Image Capability Schema Configuration
 # --------------------------------------------------------------------------------------------
 
 data "oci_core_compute_global_image_capability_schemas" "image_capability_schemas" {
@@ -397,7 +394,23 @@ resource "oci_core_compute_image_capability_schema" "worker_image_capability_sch
 }
 
 `, defaultImageCapabilitySchemaVersion, uefiSchemaData)
-		b.WriteString(uefiSection)
+		b.WriteString(uefiCapabilitySection)
+	}
+
+	// Add shape management resource for ARM64 architecture to enable A1 shapes
+	if g.vmArchitecture == "ARM64" {
+		shapeManagementSection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
+# Shape Management Configuration for ARM64
+# --------------------------------------------------------------------------------------------
+
+resource "oci_core_shape_management" "arm64_shape_support" {
+  compartment_id = var.compartment_id
+  image_id   = oci_core_image.imported_image.id
+  shape_name = "%s"
+}
+
+`, DefaultARM64Shape)
+		b.WriteString(shapeManagementSection)
 	}
 
 	b.WriteString(`resource "oci_core_instance" "kopru_instance" {
@@ -525,7 +538,7 @@ func (g *OCIGenerator) generateTFVars() error {
 	if ad == "" {
 		ad = DefaultAvailabilityDomain
 	}
-	
+
 	snapshotIDsList := formatTemplateList(g.dataDiskSnapshotIDs)
 	snapshotNamesList := formatTemplateList(g.dataDiskSnapshotNames)
 
@@ -534,10 +547,10 @@ func (g *OCIGenerator) generateTFVars() error {
 	if g.bootVolumeSizeGB > bootVolumeSize {
 		bootVolumeSize = g.bootVolumeSizeGB
 	}
-	
+
 	// Select OCI shape based on architecture
 	ociShape := g.selectOCIShape()
-	
+
 	// Calculate OCPU and memory based on source VM configuration
 	ocpus, memoryGB := g.calculateOCIResources()
 
@@ -688,4 +701,3 @@ tofu destroy
 `
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "README.md"), []byte(content), 0644)
 }
-

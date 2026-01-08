@@ -146,10 +146,12 @@ func TestCPUAndMemoryConfiguration(t *testing.T) {
 		expectedOCPUs    int32
 		expectedMemoryGB int32
 	}{
-		{"x86_64 with 2 CPUs and 8GB memory", 2, 8, "x86_64", "VM.Standard.E5.Flex", 2, 8},
-		{"ARM64 with 4 CPUs and 16GB memory", 4, 16, "ARM64", "VM.Standard.A1.Flex", 4, 16},
+		{"x86_64 with 2 vCPUs and 8GB memory", 2, 8, "x86_64", "VM.Standard.E5.Flex", 1, 8},
+		{"x86_64 with 3 vCPUs and 8GB memory (odd, rounds up)", 3, 8, "x86_64", "VM.Standard.E5.Flex", 2, 8},
+		{"ARM64 with 4 vCPUs and 16GB memory", 4, 16, "ARM64", "VM.Standard.A1.Flex", 2, 16},
 		{"x86_64 with default values (0 CPUs)", 0, 0, "x86_64", "VM.Standard.E5.Flex", 1, 12},
-		{"x86_64 with 8 CPUs and 64GB memory", 8, 64, "x86_64", "VM.Standard.E5.Flex", 8, 64},
+		{"x86_64 with 8 vCPUs and 64GB memory", 8, 64, "x86_64", "VM.Standard.E5.Flex", 4, 64},
+		{"x86_64 with 1 vCPU and 4GB memory (minimum)", 1, 4, "x86_64", "VM.Standard.E5.Flex", 1, 4},
 	}
 
 	for _, tt := range tests {
@@ -251,6 +253,116 @@ func TestArchitectureTagging(t *testing.T) {
 				t.Errorf("Expected to find tag %s in terraform.tfvars", tt.expectedTag)
 			}
 			t.Logf("✓ Architecture tag correctly set: %s", tt.expectedTag)
+		})
+	}
+}
+
+func TestARM64ShapeManagementGeneration(t *testing.T) {
+	tests := []struct {
+		name                         string
+		vmArchitecture               string
+		uefiEnabled                  bool
+		shouldContainUEFISchema      bool
+		shouldContainShapeManagement bool
+	}{
+		{"ARM64 architecture should include shape management and UEFI", "ARM64", false, true, true},
+		{"x86_64 architecture should not include shape management", "x86_64", false, false, false},
+		{"ARM64 with UEFI should include both UEFI and shape management", "ARM64", true, true, true},
+		{"x86_64 with UEFI should include UEFI but not shape management", "x86_64", true, true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			cfg := &config.Config{
+				OCICompartmentID:   "test-compartment",
+				OCISubnetID:        "test-subnet",
+				OCIRegion:          "us-ashburn-1",
+				OCIInstanceName:    "test-instance",
+				OCIImageName:       "test-image",
+				OCIImageEnableUEFI: tt.uefiEnabled,
+				TemplateOutputDir:  tmpDir,
+			}
+			log := logger.New(false)
+			gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, 4, 16, tt.vmArchitecture)
+			if err := gen.GenerateTemplate(); err != nil {
+				t.Fatalf("GenerateTemplate failed: %v", err)
+			}
+			mainTfPath := filepath.Join(tmpDir, "main.tf")
+			content, err := os.ReadFile(mainTfPath)
+			if err != nil {
+				t.Fatalf("Failed to read main.tf: %v", err)
+			}
+			mainTfContent := string(content)
+
+			// Check for UEFI capability schema
+			hasGlobalSchemaData := regexp.MustCompile(`data\s+"oci_core_compute_global_image_capability_schemas"`).MatchString(mainTfContent)
+			hasImageSchemaData := regexp.MustCompile(`image_schema_data\s*=`).MatchString(mainTfContent)
+			hasCapabilitySchemaResource := regexp.MustCompile(`resource\s+"oci_core_compute_image_capability_schema"`).MatchString(mainTfContent)
+			hasComputeFirmware := regexp.MustCompile(`Compute\.Firmware`).MatchString(mainTfContent)
+			hasUEFI64 := regexp.MustCompile(`UEFI_64`).MatchString(mainTfContent)
+
+			// Check for shape management resource
+			hasShapeManagementResource := regexp.MustCompile(`resource\s+"oci_core_shape_management"`).MatchString(mainTfContent)
+			hasA1FlexShape := regexp.MustCompile(regexp.QuoteMeta(DefaultARM64Shape)).MatchString(mainTfContent)
+
+			// Verify shape management (replaces old shape family schema approach)
+			if tt.shouldContainShapeManagement {
+				if !hasShapeManagementResource {
+					t.Error("Expected main.tf to contain oci_core_shape_management resource")
+				}
+				if !hasA1FlexShape {
+					t.Error("Expected main.tf to contain VM.Standard.A1.Flex shape")
+				}
+				t.Log("✓ ARM64 shape management resource correctly included in main.tf")
+			} else {
+				if hasShapeManagementResource {
+					t.Error("Expected main.tf to NOT contain oci_core_shape_management resource")
+				}
+				t.Log("✓ Shape management resource correctly excluded from main.tf")
+			}
+
+			// Verify UEFI schema
+			if tt.shouldContainUEFISchema {
+				if !hasGlobalSchemaData {
+					t.Error("Expected main.tf to contain oci_core_compute_global_image_capability_schemas data source")
+				}
+				if !hasImageSchemaData {
+					t.Error("Expected main.tf to contain image_schema_data local")
+				}
+				if !hasCapabilitySchemaResource {
+					t.Error("Expected main.tf to contain oci_core_compute_image_capability_schema resource")
+				}
+				if !hasComputeFirmware {
+					t.Error("Expected main.tf to contain Compute.Firmware configuration")
+				}
+				if !hasUEFI64 {
+					t.Error("Expected main.tf to contain UEFI_64 value")
+				}
+				t.Log("✓ UEFI firmware capability schema correctly configured in main.tf")
+			} else {
+				if hasGlobalSchemaData {
+					t.Error("Expected main.tf to NOT contain oci_core_compute_global_image_capability_schemas data source")
+				}
+				if hasCapabilitySchemaResource {
+					t.Error("Expected main.tf to NOT contain oci_core_compute_image_capability_schema resource")
+				}
+				if hasComputeFirmware {
+					t.Error("Expected main.tf to NOT contain Compute.Firmware configuration")
+				}
+				if hasUEFI64 {
+					t.Error("Expected main.tf to NOT contain UEFI_64 value")
+				}
+				t.Log("✓ UEFI firmware capability schema correctly excluded from main.tf")
+			}
+
+			// Verify old approach is NOT present (ShapeFamily in schema)
+			hasShapeFamily := regexp.MustCompile(`Compute\.ShapeFamily`).MatchString(mainTfContent)
+			hasA1Family := regexp.MustCompile(`A1-Family`).MatchString(mainTfContent)
+			hasA2Family := regexp.MustCompile(`A2-Family`).MatchString(mainTfContent)
+			if hasShapeFamily || hasA1Family || hasA2Family {
+				t.Error("Expected main.tf to NOT contain old Compute.ShapeFamily approach (A1-Family, A2-Family)")
+			}
 		})
 	}
 }
