@@ -12,17 +12,18 @@ Kopru is a command-line tool written in Go that automates the migration of Compu
 
 ## Supported Configurations
 
- Kopru have been tested using the images listed below:
+ Kopru have been tested using the Azure platform images listed below:
 
 - **Source Platform**: (more platforms coming soon)
   - Microsoft Azure 
 - **Operating System**: (more OSes coming soon)
   - Ubuntu 22.04 LTS (x86_64) 
-  - Ubuntu 24.04 LTS (x86_64)
+  - Ubuntu 24.04 LTS (x86_64 and ARM)
   - Debian 13 Trixie (x86_64)
   - Red Hat Enterprise Linux 9.4 (x86_64)
-  - Windows Server 2022 Datacenter 
-- **Execution Environment**: Oracle Linux 9+ in OCI
+  - Windows Server 2022 Datacenter
+  - Windows Server 2019 Datacenter  
+- **Execution Environment**: Oracle Linux 9 in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
 If your source VM has data disks attached, Kopru will automatically migrate and reattach them in OCI. For seamless operation, ensure your data disks are mounted using UUIDs or LVM rather than device paths (e.g., `/dev/sdb1`). If device paths are used, you may need to update `/etc/fstab` after migration to reflect the new device mappings in OCI.
@@ -47,7 +48,7 @@ Before migrating, ensure that the source OS has virtio drivers installed.
 
 - **Red Hat/CentOS**: Virtio drivers are included by default, but not included in initramfs by default. 
 
-  You may need to rebuild initramfs to include them. The command is as follows:
+  You may need to rebuild initramfs to include them, run:
   
   ```bash
   KERNEL_VERSION=$(uname -r)
@@ -66,6 +67,7 @@ See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks
 Clone the Kopru CLI repository and navigate into it.  
 
   ```bash
+  dnf install -y git
   git clone https://github.com/codebypatrickleung/kopru-cli.git
   cd kopru-cli
   ```
@@ -111,7 +113,9 @@ Step 1-5 are the hardest part! Now, run Kopru to start the migration. There are 
     export OCI_SUBNET_ID="ocid1.subnet.oc1..."
     export OCI_IMAGE_OS="Ubuntu"
     export OCI_IMAGE_OS_VERSION="24.04"
-    export OCI_REGION="us-ashburn-1" 
+    export OCI_REGION="us-ashburn-1"
+    export OCI_IMAGE_ENABLE_UEFI=true  # Set to true for Windows Gen2 or ARM VMs; otherwise, leave as false (default).
+    ``` 
     ./kopru &
     ```
 

@@ -30,8 +30,8 @@ type AzureToOCIHandler struct {
 	azureVMArchitecture   string
 }
 
-func NewAzureToOCIHandler() *AzureToOCIHandler { return &AzureToOCIHandler{} }
-func (h *AzureToOCIHandler) Name() string      { return "Azure to OCI Migration" }
+func NewAzureToOCIHandler() *AzureToOCIHandler      { return &AzureToOCIHandler{} }
+func (h *AzureToOCIHandler) Name() string           { return "Azure to OCI Migration" }
 func (h *AzureToOCIHandler) SourcePlatform() string { return "azure" }
 func (h *AzureToOCIHandler) TargetPlatform() string { return "oci" }
 
@@ -126,7 +126,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	} else {
 		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}
-	h.logger.Warning("You can safely ignore this warning if your available disk space exceeds the total size of your VM disks plus 50 GB.")
+	h.logger.Warning("Ignore this warning if your available disk space exceeds 2x the VM disks plus 50 GB.")
 	if err := h.azureProvider.CheckComputeExists(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName); err != nil {
 		return fmt.Errorf("azure Compute instance check failed: %w", err)
 	}
@@ -136,7 +136,6 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 		return fmt.Errorf("failed to get Compute instance OS type: %w", err)
 	}
 	h.logger.Successf("✓ Compute instance OS type: %s", osType)
-
 	cpus, memoryGB, err := h.azureProvider.GetComputeCPUAndMemory(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		h.logger.Warning(fmt.Sprintf("Failed to get VM CPU/memory configuration: %v", err))
@@ -146,9 +145,8 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	} else {
 		h.azureVMCPUs = cpus
 		h.azureVMMemoryGB = memoryGB
-		h.logger.Successf("✓ Source VM configuration: %d CPUs, %d GB memory", cpus, memoryGB)
+		h.logger.Successf("✓ Source VM configuration: %d vCPUs, %d GB memory", cpus, memoryGB)
 	}
-
 	architecture, err := h.azureProvider.GetComputeArchitecture(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		h.logger.Warning(fmt.Sprintf("Failed to get VM architecture: %v", err))
@@ -158,7 +156,6 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 		h.azureVMArchitecture = architecture
 		h.logger.Successf("✓ Source VM CPU architecture: %s", architecture)
 	}
-
 	if h.config.OCIImageOS == "" {
 		return fmt.Errorf("operating system (OCI_IMAGE_OS) is required when migrating a Compute instance. Allowed values: 'Oracle Linux', 'AlmaLinux', 'CentOS', 'Debian', 'RHEL', 'Rocky Linux', 'SUSE', 'Ubuntu', 'Windows'")
 	}
