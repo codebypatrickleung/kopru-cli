@@ -15,7 +15,7 @@ import (
 
 var (
 	cfgFile string
-	version = "0.1.5"
+	version = "0.1.6"
 )
 
 func main() {
@@ -82,33 +82,33 @@ func init() {
 	}
 
 	bindings := map[string]string{
-		"AZURE_SUBSCRIPTION_ID":          "azure-subscription-id",
-		"AZURE_RESOURCE_GROUP":           "azure-resource-group",
-		"AZURE_COMPUTE_NAME":             "azure-compute-name",
-		"OCI_REGION":                     "oci-region",
-		"OCI_COMPARTMENT_ID":             "oci-compartment-id",
-		"OCI_SUBNET_ID":                  "oci-subnet-id",
-		"OCI_BUCKET_NAME":                "oci-bucket-name",
-		"OCI_IMAGE_NAME":                 "oci-image-name",
-		"OCI_IMAGE_OS":                   "oci-image-os",
-		"OCI_IMAGE_OS_VERSION":           "oci-image-os-version",
-		"OCI_IMAGE_ENABLE_UEFI":         "oci-image-enable-uefi",
-		"OCI_INSTANCE_NAME":              "oci-instance-name",
-		"OCI_AVAILABILITY_DOMAIN":        "oci-availability-domain",
-		"SKIP_PREREQ":                    "skip-prereq",
-		"SKIP_OS_EXPORT":                 "skip-os-export",
-		"SKIP_OS_CONVERT":                "skip-os-convert",
-		"SKIP_OS_CONFIGURE":              "skip-os-configure",
-		"SKIP_OS_UPLOAD":                 "skip-os-upload",
-		"SKIP_DD_EXPORT":                 "skip-dd-export",
-		"SKIP_DD_IMPORT":                 "skip-dd-import",
-		"SKIP_TEMPLATE":                  "skip-template",
-		"SKIP_TEMPLATE_DEPLOY":           "skip-template-deploy",
-		"SKIP_VERIFY":                    "skip-verify",
-		"TEMPLATE_OUTPUT_DIR":            "template-output-dir",
-		"SOURCE_PLATFORM":                "source-platform",
-		"TARGET_PLATFORM":                "target-platform",
-		"DEBUG":                          "debug",
+		"AZURE_SUBSCRIPTION_ID":   "azure-subscription-id",
+		"AZURE_RESOURCE_GROUP":    "azure-resource-group",
+		"AZURE_COMPUTE_NAME":      "azure-compute-name",
+		"OCI_REGION":              "oci-region",
+		"OCI_COMPARTMENT_ID":      "oci-compartment-id",
+		"OCI_SUBNET_ID":           "oci-subnet-id",
+		"OCI_BUCKET_NAME":         "oci-bucket-name",
+		"OCI_IMAGE_NAME":          "oci-image-name",
+		"OCI_IMAGE_OS":            "oci-image-os",
+		"OCI_IMAGE_OS_VERSION":    "oci-image-os-version",
+		"OCI_IMAGE_ENABLE_UEFI":   "oci-image-enable-uefi",
+		"OCI_INSTANCE_NAME":       "oci-instance-name",
+		"OCI_AVAILABILITY_DOMAIN": "oci-availability-domain",
+		"SKIP_PREREQ":             "skip-prereq",
+		"SKIP_OS_EXPORT":          "skip-os-export",
+		"SKIP_OS_CONVERT":         "skip-os-convert",
+		"SKIP_OS_CONFIGURE":       "skip-os-configure",
+		"SKIP_OS_UPLOAD":          "skip-os-upload",
+		"SKIP_DD_EXPORT":          "skip-dd-export",
+		"SKIP_DD_IMPORT":          "skip-dd-import",
+		"SKIP_TEMPLATE":           "skip-template",
+		"SKIP_TEMPLATE_DEPLOY":    "skip-template-deploy",
+		"SKIP_VERIFY":             "skip-verify",
+		"TEMPLATE_OUTPUT_DIR":     "template-output-dir",
+		"SOURCE_PLATFORM":         "source-platform",
+		"TARGET_PLATFORM":         "target-platform",
+		"DEBUG":                   "debug",
 	}
 	for env, flag := range bindings {
 		viper.BindPFlag(env, rootCmd.Flags().Lookup(flag))
