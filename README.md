@@ -115,7 +115,6 @@ Step 1-5 are the hardest part! Now, run Kopru to start the migration. There are 
     export OCI_IMAGE_OS_VERSION="24.04"
     export OCI_REGION="us-ashburn-1"
     export OCI_IMAGE_ENABLE_UEFI=true  # Set to true for Windows Gen2 or ARM VMs; otherwise, leave as false (default).
-    ``` 
     ./kopru &
     ```
 
