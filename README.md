@@ -90,7 +90,7 @@ Build the Kopru CLI binary.
   ```
 5. **Authentication Setup**
 
-Kopru does not handle authentication directly. Set up authentication for both Azure and OCI using the official SDK/CLI methods, this the same as setting up authentication for your CLI tools. Kopru only need the Disk Snapshot Contributor role and the Reader role of the VM's resource group in Azure for the source VM, and the required IAM policies in OCI for the target compartment.
+Kopru does not manage authentication itself. You must configure authentication for both Azure and OCI using official SDK or CLI tools, just as you would for other CLI utilities. For Azure, Kopru requires the `Disk Snapshot Contributor` and `Reader` roles on the VM's resource group. For OCI, ensure your user or group has the necessary IAM policies for the target compartment.
 
   - **Azure**: Kopru uses `Service Principal` for Azure authentication. See [Azure Authentication doc](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps). Set:
     ```bash
