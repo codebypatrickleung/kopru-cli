@@ -90,7 +90,7 @@ Build the Kopru CLI binary.
   ```
 5. **Authentication Setup**
 
-Kopru does not handle authentication directly. Set up authentication for both Azure and OCI using the official SDK/CLI methods, this the same as setting up authentication for your CLI tools. 
+Kopru does not handle authentication directly. Set up authentication for both Azure and OCI using the official SDK/CLI methods, this the same as setting up authentication for your CLI tools. Kopru only need the Disk Snapshot Contributor role and the Reader role of the VM's resource group in Azure for the source VM, and the required IAM policies in OCI for the target compartment.
 
   - **Azure**: Kopru uses `Service Principal` for Azure authentication. See [Azure Authentication doc](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps). Set:
     ```bash
@@ -99,7 +99,7 @@ Kopru does not handle authentication directly. Set up authentication for both Az
     export AZURE_CLIENT_SECRET="your-client-secret"
     export AZURE_SUBSCRIPTION_ID="your-subscription-id"
     ```
-  - **OCI**: Kopru uses `API Key-Based Authentication` for OCI authentication. See [OCI Authentication doc](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#configfile). Essentially, you just need to run `oci setup config`, and this config file will be used by Kopru as well as OpenTofu(or Terraform) automatically. Kopru only need the Disk Snapshot Contributor role and the Reader role of the VM's resource group in Azure for the source VM, and the required IAM policies in OCI for the target compartment.
+  - **OCI**: Kopru uses `API Key-Based Authentication` for OCI authentication. See [OCI Authentication doc](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#configfile). Essentially, you just need to run `oci setup config`, and this config file will be used by Kopru as well as OpenTofu(or Terraform) automatically. 
 
 6. Run Kopru using one of these methods:
 
