@@ -14,8 +14,9 @@ import (
 
 const DefaultAvailabilityDomain = "1"
 
-// Default ARM64 shape for OCI
+// Default shapes for OCI
 const DefaultARM64Shape = "VM.Standard.A1.Flex"
+const Defaultx8664Shape = "VM.Standard.E5.Flex"
 
 // OCI Flex shape resource constraints
 const (
@@ -82,31 +83,29 @@ func formatTemplateList(items []string) string {
 }
 
 // selectOCIShape determines the appropriate OCI shape based on the architecture.
-// For x86_64: VM.Standard.E5.Flex (AMD EPYC or Intel Xeon)
-// For ARM64: VM.Standard.A1.Flex (Ampere Altra)
 func (g *OCIGenerator) selectOCIShape() string {
 	if g.vmArchitecture == "ARM64" {
 		g.logger.Infof("Selecting ARM64 shape (%s) based on source VM architecture", DefaultARM64Shape)
 		return DefaultARM64Shape
 	}
-	g.logger.Infof("Selecting x86_64 shape (VM.Standard.E5.Flex) based on source VM architecture")
-	return "VM.Standard.E5.Flex"
+	g.logger.Infof("Selecting x86_64 shape (%s) based on source VM architecture", Defaultx8664Shape)
+	return Defaultx8664Shape
 }
 
 // calculateOCIResources determines the appropriate OCPU and memory configuration for OCI.
-// Azure VMs are based on vCPU count, while OCI is based on OCPU count (1 OCPU = 2 vCPUs).
-// For x86_64 (E5.Flex): 1 OCPU minimum, memory ratio 1-64 GB per OCPU
-// For ARM64 (A1.Flex): 1 OCPU minimum, memory ratio 1-64 GB per OCPU
 func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
-	// If no source VM configuration is available, use defaults
 	if g.vmCPUs == 0 || g.vmMemoryGB == 0 {
 		g.logger.Warning(fmt.Sprintf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB))
 		return DefaultOCPUs, DefaultMemoryGB
 	}
 
-	// Azure vCPUs need to be converted to OCPUs (1 OCPU = 2 vCPUs)
-	// Round up to the nearest whole number since OCI does not support fractional OCPUs
-	ocpus = (g.vmCPUs + 1) / 2
+	if g.vmArchitecture == "ARM64" {
+		// ARM64: 1 vCPU = 1 OCPU (direct mapping)
+		ocpus = g.vmCPUs
+	} else {
+		// x86_64: 1 OCPU = 2 vCPUs
+		ocpus = (g.vmCPUs + 1) / 2
+	}
 	memoryGB = g.vmMemoryGB
 
 	// Ensure minimum OCPUs
@@ -115,7 +114,6 @@ func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
 	}
 
 	// OCI Flex shapes support 1-64 GB memory per OCPU
-	// Ensure memory is within valid range
 	minMemory := ocpus * MinMemoryPerOCPU
 	maxMemory := ocpus * MaxMemoryPerOCPU
 
@@ -344,7 +342,7 @@ data "oci_identity_availability_domain" "ad" {
 `)
 
 	// Add image import resource
-	imageImportSection := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
+	imageImportSection := `# --------------------------------------------------------------------------------------------
 # Custom Image Import from Object Storage
 # --------------------------------------------------------------------------------------------
 
@@ -363,7 +361,7 @@ resource "oci_core_image" "imported_image" {
   }
 }
 
-`)
+`
 	b.WriteString(imageImportSection)
 
 	// Add image capability schema for UEFI if enabled or if ARM64 (ARM64 requires UEFI)
