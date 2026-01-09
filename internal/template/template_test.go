@@ -148,10 +148,13 @@ func TestCPUAndMemoryConfiguration(t *testing.T) {
 	}{
 		{"x86_64 with 2 vCPUs and 8GB memory", 2, 8, "x86_64", "VM.Standard.E5.Flex", 1, 8},
 		{"x86_64 with 3 vCPUs and 8GB memory (odd, rounds up)", 3, 8, "x86_64", "VM.Standard.E5.Flex", 2, 8},
-		{"ARM64 with 4 vCPUs and 16GB memory", 4, 16, "ARM64", "VM.Standard.A1.Flex", 2, 16},
+		{"ARM64 with 4 vCPUs and 16GB memory", 4, 16, "ARM64", "VM.Standard.A1.Flex", 4, 16},
 		{"x86_64 with default values (0 CPUs)", 0, 0, "x86_64", "VM.Standard.E5.Flex", 1, 12},
 		{"x86_64 with 8 vCPUs and 64GB memory", 8, 64, "x86_64", "VM.Standard.E5.Flex", 4, 64},
 		{"x86_64 with 1 vCPU and 4GB memory (minimum)", 1, 4, "x86_64", "VM.Standard.E5.Flex", 1, 4},
+		{"ARM64 with 2 vCPUs and 12GB memory", 2, 12, "ARM64", "VM.Standard.A1.Flex", 2, 12},
+		{"ARM64 with 1 vCPU and 6GB memory", 1, 6, "ARM64", "VM.Standard.A1.Flex", 1, 6},
+		{"ARM64 with 8 vCPUs and 48GB memory", 8, 48, "ARM64", "VM.Standard.A1.Flex", 8, 48},
 	}
 
 	for _, tt := range tests {
