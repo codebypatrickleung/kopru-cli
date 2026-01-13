@@ -137,8 +137,6 @@ If you prefer Terraform, the generated templates are compatible. Just replace `t
 
 - **Logging**:
 Kopru creates a log file in the current directory named `kopru-<timestamp>.log`. Logs are shown in the console and saved for review. 
-
-  ![Kopru Log](img/kopru-log.png)
   
 - **OS Configurations**:
   All the OS-specific configurations used by Kopru CLI during image migration are written in bash script files located in the `scripts/os-config/` directory. There are several benefits to using bash scripts for OS configurations:
