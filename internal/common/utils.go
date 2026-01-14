@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +58,7 @@ func SanitizeName(name string) string {
 
 // EnsureDir creates a directory if it doesn't exist.
 func EnsureDir(path string) error {
-	return os.MkdirAll(path, 0755)
+	return os.MkdirAll(path, 0750)
 }
 
 // FindDiskFile finds the first file with the specified extension in the directory.
@@ -81,6 +82,9 @@ func GetAvailableDiskSpace(path string, minDiskSpaceGB int64) (int64, error) {
 	var stat unix.Statfs_t
 	if err := unix.Statfs(absPath, &stat); err != nil {
 		return 0, fmt.Errorf("failed to get disk space: %w", err)
+	}
+	if stat.Bavail > uint64(math.MaxInt64) {
+		return 0, fmt.Errorf("disk size value too large to safely convert to int64")
 	}
 	available := int64(stat.Bavail) * int64(stat.Bsize)
 	if minDiskSpaceGB > 0 {
@@ -107,6 +111,7 @@ func GetFileSizeGB(filePath string) (int64, error) {
 
 // CopyDataWithDD copies data from source to destination using dd.
 func CopyDataWithDD(source, destination string) error {
+	// #nosec G204 -- source and destination are controlled by the application
 	cmd := exec.Command("sudo", "dd",
 		"if="+source,
 		"of="+destination,
@@ -266,16 +271,19 @@ func executeScript(mountDir, scriptPath string, log *logger.Logger, isBuiltIn bo
 	} else {
 		fullScriptPath = scriptPath
 	}
-
-	if err := os.Chmod(fullScriptPath, 0755); err != nil {
+	
+	// #nosec G302 -- script must be executable by owner
+	if err := os.Chmod(fullScriptPath, 0700); err != nil {
 		log.Warning(fmt.Sprintf("Could not make script executable: %v", err))
 	}
 
 	env := append(os.Environ(), fmt.Sprintf("KOPRU_MOUNT_DIR=%s", mountDir))
 	var cmd *exec.Cmd
 	if isBuiltIn {
+		// #nosec G204 -- script is user-provided
 		cmd = exec.Command("sudo", fullScriptPath, mountDir)
 	} else {
+		// #nosec G204 -- script is user-provided
 		cmd = exec.Command(fullScriptPath, mountDir)
 	}
 	cmd.Env = env

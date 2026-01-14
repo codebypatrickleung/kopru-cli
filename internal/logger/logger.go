@@ -36,7 +36,8 @@ func New(debug bool) *Logger {
 // NewWithFile creates a new Logger instance that writes to both console and a file.
 func NewWithFile(debug bool, logFilePath string) (*Logger, error) {
 	flags := log.Ldate | log.Ltime
-	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// #nosec G304 -- logFilePath is controlled by the application
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}

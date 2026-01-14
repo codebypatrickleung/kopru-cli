@@ -111,7 +111,9 @@ func init() {
 		"DEBUG":                   "debug",
 	}
 	for env, flag := range bindings {
-		viper.BindPFlag(env, rootCmd.Flags().Lookup(flag))
+		if err := viper.BindPFlag(env, rootCmd.Flags().Lookup(flag)); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to bind flag %s to env %s: %v\n", flag, env, err)
+		}
 	}
 }
 

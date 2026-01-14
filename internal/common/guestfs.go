@@ -52,7 +52,9 @@ func MountQCOW2Image(imageFile string) (mountDir, partition string, err error) {
 		_ = unmountGuestFS(mountDir)
 	}
 
-	os.RemoveAll(mountDir)
+	if err := os.RemoveAll(mountDir); err != nil {
+		return "", "", fmt.Errorf("failed to remove mount directory: %w (mount error: %v)", err, lastErr)
+	}
 	return "", "", fmt.Errorf("failed to mount image after %d retries: %w", MaxMountRetries, lastErr)
 }
 
