@@ -201,7 +201,7 @@ provider "oci" {
   region = var.region
 }
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "provider.tf"), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "provider.tf"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateVariablesTF() error {
@@ -317,7 +317,7 @@ variable "freeform_tags" {
   }
 }
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "variables.tf"), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "variables.tf"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateMainTF() error {
@@ -466,7 +466,7 @@ resource "oci_core_volume_attachment" "data_volume_attachments" {
 }
 `)
 
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "main.tf"), []byte(b.String()), 0644)
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "main.tf"), []byte(b.String()), 0600)
 }
 
 func (g *OCIGenerator) generateOutputsTF() error {
@@ -528,7 +528,7 @@ output "ssh_connection" {
   )
 }
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "outputs.tf"), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "outputs.tf"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateTFVars() error {
@@ -612,7 +612,7 @@ freeform_tags = {
 		g.vmMemoryGB,
 		g.vmArchitecture,
 	)
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "terraform.tfvars"), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "terraform.tfvars"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateReadme() error {
@@ -697,5 +697,5 @@ tofu destroy
 ` + "```" + `
 
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "README.md"), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "README.md"), []byte(content), 0600)
 }

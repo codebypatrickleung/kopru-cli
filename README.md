@@ -58,9 +58,9 @@ Before migrating, ensure that the source OS has virtio drivers installed.
 
 - **Windows**: Install the Virtio drivers by following the instructions [here](https://docs.oracle.com/en/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
 
-1. Launch an Oracle Linux 9+ instance in OCI: 
+1. Launch an Oracle Linux 9 instance in OCI: 
 
-See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm).
+See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this Virtual Machine have security best practices applied, as it will handle all the VM's data during migration. Consider using [Cloud Guard](https://www.oracle.com/uk/security/cloud-security/cloud-guard/) to monitor the instance for any security issues.
 
 2. Clone this repository:
   

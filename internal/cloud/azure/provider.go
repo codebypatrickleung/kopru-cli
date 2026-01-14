@@ -312,6 +312,7 @@ func (p *Provider) DownloadFromSASURL(ctx context.Context, sasURL, destFile stri
 	if err != nil {
 		return fmt.Errorf("failed to create blob client: %w", err)
 	}
+	// #nosec G304 -- destFile is controlled by the application
 	out, err := os.Create(destFile)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
