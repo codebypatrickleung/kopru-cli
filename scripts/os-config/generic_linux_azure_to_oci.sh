@@ -1,45 +1,52 @@
 #!/bin/bash
 # Linux Azure to OCI OS Configuration Script
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-MOUNT_DIR="${1:-${KOPRU_MOUNT_DIR:-}}"
-if [[ -z "$MOUNT_DIR" ]]; then
-    log_warning "Mount directory not provided"
-    echo "Usage: $0 <mount_dir>"
+IMAGE_FILE="${1:-${KOPRU_IMAGE_FILE:-}}"
+if [[ -z "$IMAGE_FILE" ]]; then
+    log_error "Image file not provided"
+    echo "Usage: $0 <image_file>"
     exit 1
 fi
-if [[ ! -d "$MOUNT_DIR" ]]; then
-    log_warning "Mount directory does not exist: $MOUNT_DIR"
+
+if [[ ! -f "$IMAGE_FILE" ]]; then
+    log_error "Image file does not exist: $IMAGE_FILE"
     exit 1
 fi
 
 main() {
-    log_info "Starting generic Linux Azure to OCI configuration..."
-    local os_family os_version
-    os_family=$(detect_os_family)
+    log_info "Starting Azure to OCI configuration..."
+    log_info "Image file: $IMAGE_FILE"
+
+    local os_info os_family os_version guest_arch
+    os_info=$(detect_os_info_from_image)
+    os_family=$(echo "$os_info" | cut -d'|' -f1)
+    os_version=$(echo "$os_info" | cut -d'|' -f2)
     log_info "Detected OS family: $os_family"
-    os_version=$(detect_os_version)
     log_info "Detected OS version: $os_version"
 
-    log_info "=== Phase 1: Disabling Azure-specific configurations ==="
-    disable_azure_udev_rules           || log_warning "Failed to disable Azure udev rules, continuing..."
-    disable_azure_cloudinit_datasource || log_warning "Failed to disable Azure cloud-init datasource, continuing..."
-    disable_azure_chrony_refclock      || log_warning "Failed to disable Azure chrony refclock, continuing..."
-    disable_azure_hyperv_daemon        || log_warning "Failed to disable Hyper-V daemon, continuing..."
-    disable_azure_linux_agent          || log_warning "Failed to disable Azure Linux agent, continuing..."
+    guest_arch=$(detect_guest_architecture "$IMAGE_FILE")
+    log_info "Detected guest architecture: $guest_arch"
 
-    log_info "=== Phase 2: Adding OCI-specific configurations ==="
-    add_oci_chrony_config              || log_warning "Failed to add OCI chrony config, continuing..."
-    add_oci_cloudinit_datasource       || log_warning "Failed to add OCI cloud-init datasource, continuing..."
-    add_ssh_host_keys_fix              || log_warning "Failed to add SSH host keys fix, continuing..."
-    auto_relabel_selinux_contexts      || log_warning "Failed to relabel SELinux contexts, continuing..."
+    log_info "=== Applying OS configurations ==="
+    log_info "Phase 1: Disabling Azure-specific configurations..."
+    disable_azure_cloud_init "$IMAGE_FILE" "$os_family"
+    disable_azure_chrony "$IMAGE_FILE" "$os_family"
+    disable_azure_hyperv_daemons "$IMAGE_FILE" "$os_family"
+    disable_azure_agent "$IMAGE_FILE" "$os_family"
+    disable_azure_temp_disk_warning "$IMAGE_FILE" "$os_family"
 
-    log_success "Generic Linux Azure to OCI configuration complete"
-    log_info "Configuration was successful for OS family: $os_family"
+    log_info "Phase 2: Adding OCI-specific configurations..."
+    add_oci_chrony_config "$IMAGE_FILE" "$os_family"
+    add_oci_cloud_init "$IMAGE_FILE" "$os_family"
+    fix_ssh_host_keys "$IMAGE_FILE" "$os_family"
+    cloud_init_clean "$IMAGE_FILE" "$os_family"
+
+    log_info "=== OS configurations complete ==="
 }
 
 main
-exit 0

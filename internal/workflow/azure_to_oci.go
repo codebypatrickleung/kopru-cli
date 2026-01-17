@@ -114,7 +114,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image UEFI Enabled: %t", h.config.OCIImageEnableUEFI)
 	h.logger.Infof("Template Output Dir: %s", h.config.TemplateOutputDir)
 	h.logger.Step(2, "Running Prerequisite Checks")
-	for _, tool := range []string{"qemu-img", "guestmount"} {
+	for _, tool := range []string{"qemu-img", "virt-customize"} {
 		if err := common.CheckCommand(tool); err != nil {
 			return fmt.Errorf("required tool missing: %w", err)
 		}
@@ -261,22 +261,8 @@ func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 	h.logger.Infof("Configuring QCOW2 file: %s", qcow2File)
 	osType := h.config.OCIImageOS
 	if common.IsLinuxOS(osType) {
-		h.logger.Info("Mounting QCOW2 image using guestmount...")
-		mountDir, _, err := common.MountQCOW2Image(qcow2File)
-		if err != nil {
-			return fmt.Errorf("failed to mount QCOW2 image: %w", err)
-		}
-		h.logger.Successf("Successfully mounted QCOW2 image at %s", mountDir)
-		defer func() {
-			h.logger.Info("Unmounting QCOW2 image...")
-			if err := common.CleanupMount(mountDir); err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to unmount QCOW2: %v", err))
-			} else {
-				h.logger.Success("QCOW2 image unmounted")
-			}
-		}()
-		h.logger.Info("Applying OS configurations...")
-		if err := common.ExecuteOSConfigScript(mountDir, osType, h.SourcePlatform(), h.logger); err != nil {
+		h.logger.Info("Applying OS configurations using virt-customize...")
+		if err := common.ExecuteOSConfigScript(qcow2File, osType, h.SourcePlatform(), h.logger); err != nil {
 			return fmt.Errorf("failed to execute OS configuration script: %w", err)
 		}
 		h.logger.Success("Image configurations complete")

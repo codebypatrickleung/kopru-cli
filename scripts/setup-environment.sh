@@ -61,14 +61,14 @@ install_qemu_tools() {
     fi
 }
 
-install_libguestfs() {
-    if ! command -v guestfish &>/dev/null; then
-        echo "Installing libguestfs tools..."
+install_guestfs_tools() {
+    if ! command -v virt-customize &>/dev/null; then
+        echo "Installing guestfs-tools tools..."
         if command -v dnf &>/dev/null; then
-            sudo dnf install -y libguestfs-tools
+            sudo dnf install -y guestfs-tools
         fi
     else
-        echo "✓ libguestfs tools already installed."
+        echo "✓ guestfs-tools already installed."
     fi
 }
 
@@ -111,7 +111,7 @@ install_oci_cli() {
 main() {
     check_oracle_linux_version
     verify_core_utilities
-    install_libguestfs
+    install_guestfs_tools
     install_qemu_tools
     install_opentofu
     install_go
