@@ -112,7 +112,7 @@ func GetFileSizeGB(filePath string) (int64, error) {
 // CopyDataWithDD copies data from source to destination using dd.
 func CopyDataWithDD(source, destination string) error {
 	// #nosec G204 -- source and destination are controlled by the application
-	cmd := exec.Command("sudo", "dd",
+	cmd := exec.Command("dd",
 		"if="+source,
 		"of="+destination,
 		"bs=4M",
@@ -232,9 +232,9 @@ func GetComputeOSDiskSizeGB(qcow2File string) (int64, error) {
 }
 
 // ExecuteOSConfigScript executes an OS configuration script from the scripts/os-config directory.
-func ExecuteOSConfigScript(mountDir, osType, sourcePlatform string, log *logger.Logger) error {
+func ExecuteOSConfigScript(imageFile, osType, sourcePlatform string, log *logger.Logger) error {
 	if sourcePlatform == "azure" && IsLinuxOS(osType) {
-		return executeScript(mountDir, "generic_linux_azure_to_oci.sh", log, true)
+		return executeScript(imageFile, "generic_linux_azure_to_oci.sh", log, true)
 	}
 	log.Infof("Skipping OS configuration for OS type '%s'", osType)
 	return nil
@@ -255,8 +255,8 @@ func IsLinuxOS(operatingSystem string) bool {
 	return false
 }
 
-// executeScript executes a bash script with the mount directory as argument.
-func executeScript(mountDir, scriptPath string, log *logger.Logger, isBuiltIn bool) error {
+// executeScript executes a bash script with the image file path as argument.
+func executeScript(imageFile, scriptPath string, log *logger.Logger, isBuiltIn bool) error {
 	var fullScriptPath string
 	if isBuiltIn {
 		execPath, err := os.Executable()
@@ -277,14 +277,14 @@ func executeScript(mountDir, scriptPath string, log *logger.Logger, isBuiltIn bo
 		log.Warning(fmt.Sprintf("Could not make script executable: %v", err))
 	}
 
-	env := append(os.Environ(), fmt.Sprintf("KOPRU_MOUNT_DIR=%s", mountDir))
+	env := append(os.Environ(), fmt.Sprintf("KOPRU_IMAGE_FILE=%s", imageFile))
 	var cmd *exec.Cmd
 	if isBuiltIn {
 		// #nosec G204 -- script is user-provided
-		cmd = exec.Command("sudo", fullScriptPath, mountDir)
+		cmd = exec.Command("sudo", fullScriptPath, imageFile)
 	} else {
 		// #nosec G204 -- script is user-provided
-		cmd = exec.Command(fullScriptPath, mountDir)
+		cmd = exec.Command(fullScriptPath, imageFile)
 	}
 	cmd.Env = env
 
