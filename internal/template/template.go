@@ -280,12 +280,6 @@ variable "instance_memory_gb" {
   default     = 12
 }
 
-variable "assign_public_ip" {
-  description = "Whether to assign a public IP to the instance"
-  type        = bool
-  default     = true
-}
-
 variable "region" {
   description = "OCI region"
   type        = string
@@ -432,9 +426,8 @@ resource "oci_core_shape_management" "arm64_shape_support" {
   }
 
   create_vnic_details {
-	subnet_id        = var.subnet_id
-	assign_public_ip = var.assign_public_ip
-	display_name     = "${var.instance_name}-vnic"
+	subnet_id    = var.subnet_id
+	display_name = "${var.instance_name}-vnic"
   }
 
   lifecycle {
@@ -573,7 +566,6 @@ instance_name      = "%s"
 instance_shape     = "%s"
 instance_ocpus     = %d
 instance_memory_gb = %d
-assign_public_ip   = true
 
 boot_volume_size_in_gbs = %d
 
