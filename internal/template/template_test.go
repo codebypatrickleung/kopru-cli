@@ -369,3 +369,47 @@ func TestARM64ShapeManagementGeneration(t *testing.T) {
 		})
 	}
 }
+
+func TestSubnetPublicIPAssignment(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		OCICompartmentID:  "test-compartment",
+		OCISubnetID:       "test-subnet",
+		OCIRegion:         "us-ashburn-1",
+		OCIInstanceName:   "test-instance",
+		OCIImageName:      "test-image",
+		TemplateOutputDir: tmpDir,
+	}
+	log := logger.New(false)
+	gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, 2, 8, "x86_64")
+	if err := gen.GenerateTemplate(); err != nil {
+		t.Fatalf("GenerateTemplate failed: %v", err)
+	}
+	mainTfPath := filepath.Join(tmpDir, "main.tf")
+	content, err := os.ReadFile(mainTfPath)
+	if err != nil {
+		t.Fatalf("Failed to read main.tf: %v", err)
+	}
+	mainTfContent := string(content)
+
+	// Check that subnet data source is present
+	hasSubnetDataSource := regexp.MustCompile(`data\s+"oci_core_subnet"\s+"selected_subnet"`).MatchString(mainTfContent)
+	if !hasSubnetDataSource {
+		t.Error("Expected main.tf to contain oci_core_subnet data source")
+	}
+
+	// Check that assign_public_ip local is defined
+	hasAssignPublicIPLocal := regexp.MustCompile(`assign_public_ip\s*=\s*!data\.oci_core_subnet\.selected_subnet\.prohibit_public_ip_on_vnic`).MatchString(mainTfContent)
+	if !hasAssignPublicIPLocal {
+		t.Error("Expected main.tf to contain assign_public_ip local variable based on subnet's prohibit_public_ip_on_vnic")
+	}
+
+	// Check that assign_public_ip is used in create_vnic_details
+	hasAssignPublicIPInVnic := regexp.MustCompile(`assign_public_ip\s*=\s*local\.assign_public_ip`).MatchString(mainTfContent)
+	if !hasAssignPublicIPInVnic {
+		t.Error("Expected main.tf to use local.assign_public_ip in create_vnic_details")
+	}
+
+	t.Log("✓ Subnet data source and assign_public_ip logic correctly configured in main.tf")
+}
+

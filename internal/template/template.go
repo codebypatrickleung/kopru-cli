@@ -333,6 +333,14 @@ data "oci_identity_availability_domain" "ad" {
   ad_number      = var.instance_ad_number
 }
 
+data "oci_core_subnet" "selected_subnet" {
+  subnet_id = var.subnet_id
+}
+
+locals {
+  assign_public_ip = !data.oci_core_subnet.selected_subnet.prohibit_public_ip_on_vnic
+}
+
 `)
 
 	// Add image import resource
@@ -426,8 +434,9 @@ resource "oci_core_shape_management" "arm64_shape_support" {
   }
 
   create_vnic_details {
-	subnet_id    = var.subnet_id
-	display_name = "${var.instance_name}-vnic"
+	subnet_id        = var.subnet_id
+	assign_public_ip = local.assign_public_ip
+	display_name     = "${var.instance_name}-vnic"
   }
 
   lifecycle {
