@@ -234,7 +234,7 @@ func GetComputeOSDiskSizeGB(qcow2File string) (int64, error) {
 // ExecuteOSConfigScript executes an OS configuration script from the scripts/os-config directory.
 func ExecuteOSConfigScript(imageFile, osType, sourcePlatform string, log *logger.Logger) error {
 	if sourcePlatform == "azure" && IsLinuxOS(osType) {
-		return executeScript(imageFile, "generic_linux_azure_to_oci.sh", log, true)
+		return executeScript(imageFile, "azure_to_oci.sh", log, true)
 	}
 	log.Infof("Skipping OS configuration for OS type '%s'", osType)
 	return nil

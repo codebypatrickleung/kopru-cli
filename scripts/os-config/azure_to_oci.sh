@@ -24,12 +24,14 @@ main() {
     log_info "Starting Azure to OCI configuration..."
     log_info "Image file: $IMAGE_FILE"
 
-    local os_info os_family os_version guest_arch
+    local os_info os_family os_version os_id guest_arch
     os_info=$(detect_os_info_from_image)
     os_family=$(echo "$os_info" | cut -d'|' -f1)
     os_version=$(echo "$os_info" | cut -d'|' -f2)
+    os_id=$(echo "$os_info" | cut -d'|' -f3)
     log_info "Detected OS family: $os_family"
     log_info "Detected OS version: $os_version"
+    log_info "Detected OS ID: $os_id"
 
     guest_arch=$(detect_guest_architecture "$IMAGE_FILE")
     log_info "Detected guest architecture: $guest_arch"
@@ -37,14 +39,14 @@ main() {
     log_info "=== Applying OS configurations ==="
     log_info "Phase 1: Disabling Azure-specific configurations..."
     disable_azure_cloud_init "$IMAGE_FILE" "$os_family"
-    disable_azure_chrony "$IMAGE_FILE" "$os_family"
+    disable_azure_chrony "$IMAGE_FILE" "$os_family" "$os_id"
     disable_azure_hyperv_daemons "$IMAGE_FILE" "$os_family"
     disable_azure_agent "$IMAGE_FILE" "$os_family"
     disable_azure_temp_disk_warning "$IMAGE_FILE" "$os_family"
 
     log_info "Phase 2: Adding OCI-specific configurations..."
-    add_oci_chrony_config "$IMAGE_FILE" "$os_family"
-    add_oci_cloud_init "$IMAGE_FILE" "$os_family"
+    add_oci_chrony_config "$IMAGE_FILE" "$os_family" "$os_id"
+    add_oci_cloud_init "$IMAGE_FILE" "$os_family" "$os_id" 
     fix_ssh_host_keys "$IMAGE_FILE" "$os_family"
     cloud_init_clean "$IMAGE_FILE" "$os_family"
 
