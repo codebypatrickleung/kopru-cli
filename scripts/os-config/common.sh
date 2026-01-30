@@ -13,10 +13,10 @@ detect_os_info_from_image() {
     os_version=$(echo "$output" | grep -E "^VERSION_ID=" | head -n1 | cut -d= -f2 | tr -d '"')
     case "$os_id" in
         ubuntu|debian) os_family="debian" ;;
-        rhel|centos|almalinux|rocky|ol|fedora) os_family="rhel" ;;
+        rhel|centos|almalinux|rocky|ol|fedora|opensuse|opensuse-leap|opensuse-tumbleweed|sles) os_family="rhel" ;;
         *) os_family="unknown" ;;
     esac
-    echo "$os_family|${os_version:-unknown}"
+    echo "$os_family|${os_version:-unknown}|${os_id:-unknown}"
 }
 
 detect_guest_architecture() {
@@ -41,8 +41,13 @@ disable_azure_cloud_init() {
 }
 
 disable_azure_chrony() {
-    local image_file=$1 os_family=$2 
+    local image_file=$1 os_family=$2 os_id=$3
     log_info "Disabling Azure chrony refclock..."
+    if [[ "$os_id" == "sles" ]]; then
+        virt-customize -a "$image_file" --edit "/etc/chrony.d/azure.conf:s/^/# /" &>/dev/null || log_warning "Failed to comment out Azure chrony config for SLES"
+        log_success "Successfully commented out Azure chrony config for SLES"
+        return 0
+    fi
     local chrony_conf
     [[ "$os_family" == "debian" ]] && chrony_conf="/etc/chrony/chrony.conf" || chrony_conf="/etc/chrony.conf"
     virt-customize -a "$image_file" --edit "$chrony_conf:s|^refclock PHC /dev/ptp_hyperv|# refclock PHC /dev/ptp_hyperv|" &>/dev/null || log_warning "Failed to disable Azure chrony refclock"
@@ -100,8 +105,12 @@ cloud_init_clean() {
 }
 
 add_oci_chrony_config() {
-    local image_file=$1 os_family=$2 
+    local image_file=$1 os_family=$2 os_id=$3
     log_info "Adding OCI chrony config..."
+    if [[ "$os_id" == "sles" ]]; then
+        log_info "Detected SLES - skipping OCI chrony config"
+        return 0
+    fi
     local chrony_conf oci_server
     [[ "$os_family" == "debian" ]] && chrony_conf="/etc/chrony/chrony.conf" || chrony_conf="/etc/chrony.conf"
     oci_server="server 169.254.169.254 iburst"
@@ -113,12 +122,25 @@ add_oci_chrony_config() {
 }
 
 add_oci_cloud_init() {
-    local image_file=$1 os_family=$2 
+    local image_file=$1 os_family=$2 os_id=$3
     log_info "Adding OCI cloud-init datasource..."
+    if [[ "$os_id" == "sles" ]]; then
+        log_info "Detected SLES - editing /etc/cloud/cloud.cfg"
+        if virt-customize -a "$image_file" --edit "/etc/cloud/cloud.cfg:s/datasource_list: *\[ *Azure *\]/datasource_list: [ Oracle ]/" &>/dev/null; then
+            log_success "Updated datasource in /etc/cloud/cloud.cfg for SLES"
+            return 0
+        else
+            log_warning "Failed to edit cloud.cfg datasource for SLES, trying fallback method"
+        fi
+    fi
     if ! virt-ls -a "$image_file" /etc/cloud/cloud.cfg.d &>/dev/null; then
         virt-customize -a "$image_file" --mkdir /etc/cloud/cloud.cfg.d &>/dev/null || log_warning "Failed to create cloud-init directory"
     fi
-    virt-customize -a "$image_file" --write "/etc/cloud/cloud.cfg.d/90_oci_datasource.cfg:datasource_list: [ Oracle ]" &>/dev/null || log_warning "Failed to write OCI cloud-init datasource file"
+    if virt-customize -a "$image_file" --write "/etc/cloud/cloud.cfg.d/90_oci_datasource.cfg:datasource_list: [ Oracle ]" &>/dev/null; then
+        log_success "OCI cloud-init datasource configured successfully"
+    else
+        log_warning "Failed to write OCI cloud-init datasource file"
+    fi
 }
 
 fix_ssh_host_keys() {

@@ -22,7 +22,8 @@ Kopru is a command-line tool written in Go that automates the migration of Compu
   - Debian 13 Trixie (x86_64)
   - Red Hat Enterprise Linux 9.4 (x86_64)
   - Windows Server 2022 Datacenter
-  - Windows Server 2019 Datacenter  
+  - Windows Server 2019 Datacenter 
+  - Suse Linux Enterprise Server 15 SP6 (x86_64) 
 - **Execution Environment**: Oracle Linux 9 in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
