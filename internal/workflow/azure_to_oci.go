@@ -113,6 +113,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image OS Version: %s", h.config.OCIImageOSVersion)
 	h.logger.Infof("OCI Image UEFI Enabled: %t", h.config.OCIImageEnableUEFI)
 	h.logger.Infof("Template Output Dir: %s", h.config.TemplateOutputDir)
+	h.logger.Infof("SSH Key File Path: %s", h.config.SSHKeyFilePath)
 	h.logger.Step(2, "Running Prerequisite Checks")
 	for _, tool := range []string{"qemu-img", "virt-customize"} {
 		if err := common.CheckCommand(tool); err != nil {

@@ -15,7 +15,7 @@ import (
 
 var (
 	cfgFile string
-	version = "0.1.7"
+	version = "0.2.0"
 )
 
 func main() {
@@ -54,8 +54,10 @@ func init() {
 		{"oci-image-enable-uefi", "", "Enable UEFI for OCI image (true or false)", "false"},
 		{"oci-instance-name", "", "OCI instance name", ""},
 		{"oci-availability-domain", "", "OCI availability domain", ""},
+		{"os-image-url", "", "URL to OS image in QCOW2 format for linux_image source platform", ""},
 		{"template-output-dir", "", "Directory for template files", "./template-output"},
-		{"source-platform", "", "Source cloud platform (azure)", "azure"},
+		{"ssh-key-file", "", "Path to SSH public key file for instance access", ""},
+		{"source-platform", "", "Source cloud platform (azure, linux_image)", "azure"},
 		{"target-platform", "", "Target cloud platform (oci)", "oci"},
 	}
 	for _, f := range flags {
@@ -95,6 +97,7 @@ func init() {
 		"OCI_IMAGE_ENABLE_UEFI":   "oci-image-enable-uefi",
 		"OCI_INSTANCE_NAME":       "oci-instance-name",
 		"OCI_AVAILABILITY_DOMAIN": "oci-availability-domain",
+		"OS_IMAGE_URL":            "os-image-url",
 		"SKIP_PREREQ":             "skip-prereq",
 		"SKIP_OS_EXPORT":          "skip-os-export",
 		"SKIP_OS_CONVERT":         "skip-os-convert",
@@ -106,6 +109,7 @@ func init() {
 		"SKIP_TEMPLATE_DEPLOY":    "skip-template-deploy",
 		"SKIP_VERIFY":             "skip-verify",
 		"TEMPLATE_OUTPUT_DIR":     "template-output-dir",
+		"SSH_KEY_FILE":            "ssh-key-file",
 		"SOURCE_PLATFORM":         "source-platform",
 		"TARGET_PLATFORM":         "target-platform",
 		"DEBUG":                   "debug",

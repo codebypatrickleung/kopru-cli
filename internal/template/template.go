@@ -310,6 +310,12 @@ variable "freeform_tags" {
 	"created-by" = "kopru"
   }
 }
+
+variable "ssh_public_key" {
+  description = "SSH public key for instance access (optional)"
+  type        = string
+  default     = ""
+}
 `
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "variables.tf"), []byte(content), 0600)
 }
@@ -439,6 +445,10 @@ resource "oci_core_shape_management" "arm64_shape_support" {
 	display_name     = "${var.instance_name}-vnic"
   }
 
+  metadata = var.ssh_public_key != "" ? {
+	ssh_authorized_keys = var.ssh_public_key
+  } : {}
+
   lifecycle {
 	prevent_destroy = false
   }
@@ -554,6 +564,18 @@ func (g *OCIGenerator) generateTFVars() error {
 	// Calculate OCPU and memory based on source VM configuration
 	ocpus, memoryGB := g.calculateOCIResources()
 
+	// Read SSH public key from file if provided
+	var sshPublicKey string
+	if g.config.SSHKeyFilePath != "" {
+		keyData, err := os.ReadFile(g.config.SSHKeyFilePath)
+		if err != nil {
+			g.logger.Warningf("Failed to read SSH key file %s: %v. SSH key will not be configured.", g.config.SSHKeyFilePath, err)
+		} else {
+			sshPublicKey = strings.TrimSpace(string(keyData))
+			g.logger.Infof("Successfully read SSH public key from %s", g.config.SSHKeyFilePath)
+		}
+	}
+
 	content := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
 # Variable Values for OpenTofu
 # --------------------------------------------------------------------------------------------
@@ -613,6 +635,12 @@ freeform_tags = {
 		g.vmMemoryGB,
 		g.vmArchitecture,
 	)
+
+	// Append SSH public key if provided
+	if sshPublicKey != "" {
+		content += fmt.Sprintf("\nssh_public_key = \"%s\"\n", sshPublicKey)
+	}
+
 	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "terraform.tfvars"), []byte(content), 0600)
 }
 

@@ -33,7 +33,9 @@ type Config struct {
 	OCIInstanceName       string
 	OCIRegion             string
 	OCIAvailabilityDomain string
+	OSImageURL            string
 	TemplateOutputDir     string
+	SSHKeyFilePath        string
 	SkipPrereq            bool
 	SkipExport            bool
 	SkipConvert           bool
@@ -103,7 +105,9 @@ func Load(configFile string) (*Config, error) {
 		OCIInstanceName:       ociInstanceName,
 		OCIRegion:             viper.GetString("oci_region"),
 		OCIAvailabilityDomain: viper.GetString("oci_availability_domain"),
+		OSImageURL:            viper.GetString("os_image_url"),
 		TemplateOutputDir:     templateOutputDir,
+		SSHKeyFilePath:        viper.GetString("ssh_key_file"),
 		SkipPrereq:            viper.GetBool("skip_prereq"),
 		SkipExport:            viper.GetBool("skip_os_export"),
 		SkipConvert:           viper.GetBool("skip_os_convert"),

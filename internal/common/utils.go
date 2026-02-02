@@ -236,6 +236,9 @@ func ExecuteOSConfigScript(imageFile, osType, sourcePlatform string, log *logger
 	if sourcePlatform == "azure" && IsLinuxOS(osType) {
 		return executeScript(imageFile, "azure_to_oci.sh", log, true)
 	}
+	if sourcePlatform == "linux_image" {
+		return executeScript(imageFile, "linux_image_to_oci.sh", log, true)
+	}
 	log.Infof("Skipping OS configuration for OS type '%s'", osType)
 	return nil
 }
