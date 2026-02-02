@@ -35,7 +35,6 @@ install_iscsi_initiator() {
     local image_file=$1
     log_info "Installing iSCSI initiator..."
     
-    # Determine the appropriate iSCSI package based on OS family
     local iscsi_package
     case "$OS_FAMILY" in
         debian)
@@ -54,6 +53,14 @@ install_iscsi_initiator() {
     if ! virt-customize -a "$image_file" --install "$iscsi_package" &>/dev/null; then
         log_warning "Failed to install $iscsi_package package"
     fi
+
+    if [[ "$OS_FAMILY" == "rhel" ]]; then
+        log_info "Installing dracut-network package"
+        if ! virt-customize -a "$image_file" --install "dracut-network" &>/dev/null; then
+            log_warning "Failed to install dracut-network package"
+        fi
+    fi
+
     log_success "iSCSI initiator installed successfully"
 }
 

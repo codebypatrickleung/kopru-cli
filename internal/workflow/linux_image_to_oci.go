@@ -146,12 +146,12 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 	
 	// Set image and instance names if using defaults
 	if h.config.OCIImageName == "kopru-image" {
-		h.config.OCIImageName = fmt.Sprintf("linux-image-%s", h.config.OCIImageOSVersion)
-		h.logger.Infof("Using generic image name: %s", h.config.OCIImageName)
+		h.config.OCIImageName = fmt.Sprintf("%s-%s-image", strings.ReplaceAll(h.config.OCIImageOS, " ", "-"), h.config.OCIImageOSVersion)
+		h.logger.Infof("Using image name: %s", h.config.OCIImageName)
 	}
 	if h.config.OCIInstanceName == "kopru-instance" {
-		h.config.OCIInstanceName = fmt.Sprintf("linux-instance-%s", h.config.OCIImageOSVersion)
-		h.logger.Infof("Using generic instance name: %s", h.config.OCIInstanceName)
+		h.config.OCIInstanceName = fmt.Sprintf("%s-%s-instance", strings.ReplaceAll(h.config.OCIImageOS, " ", "-"), h.config.OCIImageOSVersion)
+		h.logger.Infof("Using instance name: %s", h.config.OCIInstanceName)
 	}
 	
 	if h.config.OCIRegion == "" {
