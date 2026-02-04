@@ -31,10 +31,12 @@ Migrate Azure VMs (Ubuntu, Debian, RHEL, Windows Server) to Oracle Cloud Infrast
 
 ### Linux Image to OCI Deployment
 
-For OS that is not avaliable in OCI Marketplace, you can use this workflow to deploy Linux cloud images directly to OCI.
+For OS that is not available in OCI provided image or Marketplace, you can use this workflow to deploy Linux cloud images directly to OCI.
 
 **Supported Operating Systems:** 
 - Debian 13 Trixie
+- Fedora 43
+- CentOS Stream 10
 
 [📖 View Detailed Linux Image Deployment Guide](docs/linux-image-deployment.md)
 

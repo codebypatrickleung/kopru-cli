@@ -92,48 +92,7 @@ rebuild_iscsi_initramfs() {
             " &>/dev/null || log_warning "Failed to configure iSCSI in initramfs (RHEL/Fedora)"
             ;;
         *)
-            log_warning "Unknown OS family: $OS_FAMILY, attempting generic iSCSI configuration"
-            virt-customize -a "$image_file" --run-command "
-                mkdir -p /etc/iscsi
-                # Try update-initramfs first (Debian-based)
-                if command -v update-initramfs &>/dev/null; then
-                    echo 'ISCSI_AUTO=true' > /etc/iscsi/iscsi.initramfs
-                    grep -q '^iscsi_ibft$' /etc/initramfs-tools/modules || echo 'iscsi_ibft' >> /etc/initramfs-tools/modules
-                    grep -q '^iscsi_tcp$' /etc/initramfs-tools/modules || echo 'iscsi_tcp' >> /etc/initramfs-tools/modules
-                    grep -q '^libiscsi$' /etc/initramfs-tools/modules || echo 'libiscsi' >> /etc/initramfs-tools/modules
-                    update-initramfs -u
-                # Try dracut (RHEL-based, OpenSUSE, Gentoo)
-                elif command -v dracut &>/dev/null; then
-                    mkdir -p /etc/dracut.conf.d
-                    echo 'add_drivers+=\" iscsi_tcp iscsi_ibft \"' > /etc/dracut.conf.d/iscsi.conf
-                    echo 'add_dracutmodules+=\" iscsi \"' >> /etc/dracut.conf.d/iscsi.conf
-                    dracut -f --regenerate-all || dracut -f
-                # Try mkinitcpio (Arch-based)
-                elif command -v mkinitcpio &>/dev/null; then
-                    # Add iscsi hook if not present in HOOKS
-                    if ! grep -q 'HOOKS=.*iscsi' /etc/mkinitcpio.conf; then
-                        sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 iscsi)/' /etc/mkinitcpio.conf || true
-                    fi
-                    mkinitcpio -P
-                # Try mkinitfs (Alpine)
-                elif command -v mkinitfs &>/dev/null; then
-                    echo 'features=\"iscsi\"' >> /etc/mkinitfs/mkinitfs.conf || true
-                    # Find the latest kernel version
-                    KERNEL_VER=\$(ls -1 /lib/modules/ | sort -V | tail -n1)
-                    if [ -n \"\$KERNEL_VER\" ]; then
-                        mkinitfs -c /etc/mkinitfs/mkinitfs.conf \"\$KERNEL_VER\"
-                    else
-                        echo 'Warning: No kernel version found in /lib/modules/'
-                    fi
-                # Try genkernel (Gentoo)
-                elif command -v genkernel &>/dev/null; then
-                    genkernel --iscsi --install initramfs
-                else
-                    echo 'Warning: No supported initramfs tool found'
-                    exit 1
-                fi
-            " &>/dev/null || log_warning "Failed to configure iSCSI in initramfs (generic fallback)"
-            ;;
+            log_warning "Unknown OS family: $OS_FAMILY, skipping iSCSI configuration"
     esac
     log_success "iSCSI configured in initramfs successfully"
 }

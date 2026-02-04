@@ -11,6 +11,7 @@ Kopru supports direct deployment of Linux cloud images to OCI. You can use any L
 - **Supported Distributions**: 
   - [Debian](https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2)
   - [Fedora](https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2)
+  - [CentOS Stream](https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2)
 - **Execution Environment**: Oracle Linux 9 in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
@@ -121,4 +122,4 @@ Kopru creates a log file in the current directory named `kopru-<timestamp>.log`.
 
 ## Post-Deployment
 
-Ensure health checks and testing are performed post-deployment to validate success.
+Ensure health checks and testing are performed post-deployment to validate success. The default user to login is debian for Debian, fedora for Fedora, and cloud-user for CentOS Stream.
