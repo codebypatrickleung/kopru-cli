@@ -233,7 +233,7 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	}()
 
 	p.logger.Infof("Generating SAS URL for snapshot: %s", snapshotName)
-	sasURL, err := p.GrantSnapshotAccess(ctx, resourceGroup, snapshotName, 7200)
+	sasURL, err := p.GrantSnapshotAccess(ctx, resourceGroup, snapshotName, 86400)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS URL: %w", err)
 	}
