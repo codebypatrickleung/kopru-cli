@@ -20,7 +20,7 @@ Kopru supports direct deployment of Linux cloud images to OCI. You can use any L
 Kopru automatically configures images for OCI including:
 
 - iSCSI initiator installation
-- Kernel parameter configuration (rd.iscsi.ibft=1 rd.iscsi.firmware=1)
+- iSCSI kernel parameter configuration 
 - Initramfs rebuild
 - Cloud-init version 20.3+ verification
 - Oracle datasource configuration
