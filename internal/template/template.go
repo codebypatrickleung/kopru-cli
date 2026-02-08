@@ -45,10 +45,11 @@ type OCIGenerator struct {
 	vmCPUs                int32
 	vmMemoryGB            int32
 	vmArchitecture        string
+	templateOutputDir     string
 }
 
 // NewOCIGenerator creates a new OCI template generator.
-func NewOCIGenerator(cfg *config.Config, log *logger.Logger, namespace, objectName string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string) *OCIGenerator {
+func NewOCIGenerator(cfg *config.Config, log *logger.Logger, namespace, objectName string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string, templateOutputDir string) *OCIGenerator {
 	return &OCIGenerator{
 		config:                cfg,
 		logger:                log,
@@ -60,6 +61,7 @@ func NewOCIGenerator(cfg *config.Config, log *logger.Logger, namespace, objectNa
 		vmCPUs:                vmCPUs,
 		vmMemoryGB:            vmMemoryGB,
 		vmArchitecture:        vmArchitecture,
+		templateOutputDir:     templateOutputDir,
 	}
 }
 
@@ -132,10 +134,10 @@ func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
 
 // GenerateTemplate generates all template configuration files.
 func (g *OCIGenerator) GenerateTemplate() error {
-	if err := common.EnsureDir(g.config.TemplateOutputDir); err != nil {
+	if err := common.EnsureDir(g.templateOutputDir); err != nil {
 		return fmt.Errorf("failed to create template output directory: %w", err)
 	}
-	g.logger.Infof("Generating template files in: %s", g.config.TemplateOutputDir)
+	g.logger.Infof("Generating template files in: %s", g.templateOutputDir)
 
 	generators := []func() error{
 		g.generateProviderTF,
@@ -150,7 +152,7 @@ func (g *OCIGenerator) GenerateTemplate() error {
 			return err
 		}
 	}
-	g.logger.Successf("Template generated in %s", g.config.TemplateOutputDir)
+	g.logger.Successf("Template generated in %s", g.templateOutputDir)
 	return nil
 }
 
@@ -159,7 +161,7 @@ func (g *OCIGenerator) DeployTemplate() error {
 	if err := common.CheckCommand("tofu"); err != nil {
 		return fmt.Errorf("tofu not found: %w", err)
 	}
-	dir := g.config.TemplateOutputDir
+	dir := g.templateOutputDir
 
 	steps := []struct {
 		msg  string
@@ -201,7 +203,7 @@ provider "oci" {
   region = var.region
 }
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "provider.tf"), []byte(content), 0600)
+	return os.WriteFile(filepath.Join(g.templateOutputDir, "provider.tf"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateVariablesTF() error {
@@ -317,7 +319,7 @@ variable "ssh_public_key" {
   default     = ""
 }
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "variables.tf"), []byte(content), 0600)
+	return os.WriteFile(filepath.Join(g.templateOutputDir, "variables.tf"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateMainTF() error {
@@ -478,7 +480,7 @@ resource "oci_core_volume_attachment" "data_volume_attachments" {
 }
 `)
 
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "main.tf"), []byte(b.String()), 0600)
+	return os.WriteFile(filepath.Join(g.templateOutputDir, "main.tf"), []byte(b.String()), 0600)
 }
 
 func (g *OCIGenerator) generateOutputsTF() error {
@@ -540,7 +542,7 @@ output "ssh_connection" {
   )
 }
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "outputs.tf"), []byte(content), 0600)
+	return os.WriteFile(filepath.Join(g.templateOutputDir, "outputs.tf"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateTFVars() error {
@@ -641,7 +643,7 @@ freeform_tags = {
 		content += fmt.Sprintf("\nssh_public_key = \"%s\"\n", sshPublicKey)
 	}
 
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "terraform.tfvars"), []byte(content), 0600)
+	return os.WriteFile(filepath.Join(g.templateOutputDir, "terraform.tfvars"), []byte(content), 0600)
 }
 
 func (g *OCIGenerator) generateReadme() error {
@@ -726,5 +728,5 @@ tofu destroy
 ` + "```" + `
 
 `
-	return os.WriteFile(filepath.Join(g.config.TemplateOutputDir, "README.md"), []byte(content), 0600)
+	return os.WriteFile(filepath.Join(g.templateOutputDir, "README.md"), []byte(content), 0600)
 }

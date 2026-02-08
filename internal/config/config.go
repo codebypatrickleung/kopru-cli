@@ -13,7 +13,6 @@ const (
 	defaultImageName     = "kopru-image"
 	defaultInstanceName  = "kopru-instance"
 	imageSuffix          = "-image"
-	templateOutputSuffix = "-template-output"
 )
 
 // Config holds all configuration for the Kopru CLI.
@@ -34,7 +33,6 @@ type Config struct {
 	OCIRegion             string
 	OCIAvailabilityDomain string
 	OSImageURL            string
-	TemplateOutputDir     string
 	SSHKeyFilePath        string
 	SkipPrereq            bool
 	SkipExport            bool
@@ -56,7 +54,6 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("oci_bucket_name", "kopru-bucket")
 	viper.SetDefault("oci_image_name", defaultImageName)
 	viper.SetDefault("oci_instance_name", defaultInstanceName)
-	viper.SetDefault("template_output_dir", "./template-output")
 
 	viper.AutomaticEnv()
 
@@ -70,10 +67,6 @@ func Load(configFile string) (*Config, error) {
 	}
 
 	azureComputeName := viper.GetString("azure_compute_name")
-	templateOutputDir := viper.GetString("template_output_dir")
-	if templateOutputDir == "./template-output" && azureComputeName != "" {
-		templateOutputDir = fmt.Sprintf("./%s%s", common.SanitizeName(azureComputeName), templateOutputSuffix)
-	}
 
 	ociInstanceName := viper.GetString("oci_instance_name")
 	if (ociInstanceName == defaultInstanceName || ociInstanceName == "") && azureComputeName != "" {
@@ -106,7 +99,6 @@ func Load(configFile string) (*Config, error) {
 		OCIRegion:             viper.GetString("oci_region"),
 		OCIAvailabilityDomain: viper.GetString("oci_availability_domain"),
 		OSImageURL:            viper.GetString("os_image_url"),
-		TemplateOutputDir:     templateOutputDir,
 		SSHKeyFilePath:        viper.GetString("ssh_key_file"),
 		SkipPrereq:            viper.GetBool("skip_prereq"),
 		SkipExport:            viper.GetBool("skip_os_export"),

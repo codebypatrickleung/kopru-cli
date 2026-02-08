@@ -25,11 +25,9 @@ type LinuxImageToOCIHandler struct {
 	osImageURL        string
 	osDiskSizeGB      int64
 	osArchitecture    string
+	imageExportDir    string
+	templateOutputDir string
 }
-
-const (
-	imageExportDir    = "./linux-image-download"
-)
 
 func NewLinuxImageToOCIHandler() *LinuxImageToOCIHandler      { return &LinuxImageToOCIHandler{} }
 func (h *LinuxImageToOCIHandler) Name() string           { return "Linux Image to OCI Deployment" }
@@ -49,7 +47,12 @@ func (h *LinuxImageToOCIHandler) Initialize(cfg *config.Config, log *logger.Logg
 		return fmt.Errorf("OS image URL (OS_IMAGE_URL) is required for Linux Image to OCI workflow")
 	}
 	h.osArchitecture = "x86_64"
-	
+
+	osName := common.SanitizeName(cfg.OCIImageOS)
+	osVersion := common.SanitizeName(cfg.OCIImageOSVersion)
+	h.imageExportDir = fmt.Sprintf("./export-%s-%s", osName, osVersion)
+	h.templateOutputDir = fmt.Sprintf("./%s-%s-template-output", osName, osVersion)
+
 	return nil
 }
 
@@ -86,7 +89,7 @@ func (h *LinuxImageToOCIHandler) Execute(ctx context.Context) error {
 		}
 	} else {
 		h.logger.Warning("Skipping template deployment (SKIP_TEMPLATE_DEPLOY=true)")
-		h.logger.Infof("To deploy manually, run: cd %s && tofu init && tofu apply", h.config.TemplateOutputDir)
+		h.logger.Infof("To deploy manually, run: cd %s && tofu init && tofu apply", h.templateOutputDir)
 	}
 
 	if !h.config.SkipVerify {
@@ -113,7 +116,7 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image Name: %s", h.config.OCIImageName)
 	h.logger.Infof("OCI Image OS: %s", h.config.OCIImageOS)
 	h.logger.Infof("OCI Image OS Version: %s", h.config.OCIImageOSVersion)
-	h.logger.Infof("Template Output Dir: %s", h.config.TemplateOutputDir)
+	h.logger.Infof("Template Output Dir: %s", h.templateOutputDir)
 	h.logger.Infof("SSH Key File Path: %s", h.config.SSHKeyFilePath)
 	h.logger.Step(2, "Running Prerequisite Checks")
 	for _, tool := range []string{"qemu-img", "virt-customize", "curl"} {
@@ -185,14 +188,14 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 func (h *LinuxImageToOCIHandler) downloadOSImage(ctx context.Context) error {
 	h.logger.Step(3, "Downloading Linux Cloud Image")
 	
-	if err := common.EnsureDir(imageExportDir); err != nil {
+	if err := common.EnsureDir(h.imageExportDir); err != nil {
 		return fmt.Errorf("failed to create download directory: %w", err)
 	}
-	h.logger.Infof("Download directory: %s", imageExportDir)
+	h.logger.Infof("Download directory: %s", h.imageExportDir)
 	
 	urlParts := strings.Split(h.osImageURL, "/")
 	filename := urlParts[len(urlParts)-1]
-	destPath := filepath.Join(imageExportDir, filename)
+	destPath := filepath.Join(h.imageExportDir, filename)
 	
 	if _, err := os.Stat(destPath); err == nil {
 		h.logger.Infof("Image file already exists: %s", destPath)
@@ -230,7 +233,7 @@ func (h *LinuxImageToOCIHandler) downloadOSImage(ctx context.Context) error {
 
 func (h *LinuxImageToOCIHandler) configureImage(ctx context.Context) error {
 	h.logger.Step(4, "Configuring Image for OCI")
-	qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -248,7 +251,7 @@ func (h *LinuxImageToOCIHandler) configureImage(ctx context.Context) error {
 func (h *LinuxImageToOCIHandler) uploadImage(ctx context.Context) error {
 	h.logger.Step(5, "Uploading Image to OCI")
 	
-	qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -277,7 +280,7 @@ func (h *LinuxImageToOCIHandler) uploadImage(ctx context.Context) error {
 
 // getImageImportDetails retrieves namespace and object name for image import
 func (h *LinuxImageToOCIHandler) getImageImportDetails(ctx context.Context) (namespace, objectName string, err error) {
-	qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -293,7 +296,7 @@ func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 	h.logger.Step(6, "Generating Template")
 	if h.osDiskSizeGB == 0 {
 		h.logger.Info("Reading OS disk size from QCOW2 file...")
-		qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2")
+		qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2")
 		if err != nil {
 			return fmt.Errorf("failed to find QCOW2 file: %w", err)
 		}
@@ -315,7 +318,8 @@ func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, namespace, objectName,
 		[]string{}, []string{}, 
-		h.osDiskSizeGB, 0, 0, h.osArchitecture, 
+		h.osDiskSizeGB, 0, 0, h.osArchitecture,
+		h.templateOutputDir,
 	)
 	return tfGen.GenerateTemplate()
 }
@@ -330,6 +334,7 @@ func (h *LinuxImageToOCIHandler) deployTemplate(ctx context.Context) error {
 		h.config, h.logger, namespace, objectName,
 		[]string{}, []string{},
 		h.osDiskSizeGB, 0, 0, h.osArchitecture,
+		h.templateOutputDir,
 	)
 	return tfGen.DeployTemplate()
 }
@@ -338,13 +343,13 @@ func (h *LinuxImageToOCIHandler) verifyWorkflow(ctx context.Context) error {
 	h.logger.Step(8, "Verifying Workflow")
 	
 	if !h.config.SkipExport {
-		if qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2"); err == nil {
+		if qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2"); err == nil {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
 	}
 	if !h.config.SkipTemplate {
-		if _, err := os.Stat(h.config.TemplateOutputDir); err == nil {
-			h.logger.Successf("✓ Template files exist in: %s", h.config.TemplateOutputDir)
+		if _, err := os.Stat(h.templateOutputDir); err == nil {
+			h.logger.Successf("✓ Template files exist in: %s", h.templateOutputDir)
 		}
 	}
 	h.logger.Success("Workflow verification complete")
@@ -354,7 +359,7 @@ func (h *LinuxImageToOCIHandler) verifyWorkflow(ctx context.Context) error {
 		h.logger.Info("1. Check the OCI console for the deployed instance")
 		h.logger.Info("2. Verify the instance is running as expected")
 	} else {
-		h.logger.Infof("1. Navigate to: %s", h.config.TemplateOutputDir)
+		h.logger.Infof("1. Navigate to: %s", h.templateOutputDir)
 		h.logger.Info("2. Run: tofu init && tofu apply")
 		h.logger.Info("3. Check the OCI console for the deployed instance")
 	}

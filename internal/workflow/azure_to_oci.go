@@ -28,6 +28,7 @@ type AzureToOCIHandler struct {
 	azureVMCPUs           int32
 	azureVMMemoryGB       int32
 	azureVMArchitecture   string
+	templateOutputDir     string
 }
 
 func NewAzureToOCIHandler() *AzureToOCIHandler      { return &AzureToOCIHandler{} }
@@ -44,6 +45,10 @@ func (h *AzureToOCIHandler) Initialize(cfg *config.Config, log *logger.Logger) e
 	if h.ociProvider, err = oci.NewProvider(cfg.OCIRegion, log); err != nil {
 		return fmt.Errorf("failed to initialize OCI provider: %w", err)
 	}
+
+	// Set template output directory based on Azure compute name
+	h.templateOutputDir = fmt.Sprintf("./%s-template-output", common.SanitizeName(cfg.AzureComputeName))
+
 	return nil
 }
 
@@ -83,7 +88,7 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 		}
 	} else {
 		h.logger.Warning("Skipping template deployment (SKIP_TEMPLATE_DEPLOY=true)")
-		h.logger.Infof("To deploy manually, run: cd %s && tofu init && tofu apply", h.config.TemplateOutputDir)
+		h.logger.Infof("To deploy manually, run: cd %s && tofu init && tofu apply", h.templateOutputDir)
 	}
 
 	if !h.config.SkipVerify {
@@ -112,7 +117,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image OS: %s", h.config.OCIImageOS)
 	h.logger.Infof("OCI Image OS Version: %s", h.config.OCIImageOSVersion)
 	h.logger.Infof("OCI Image UEFI Enabled: %t", h.config.OCIImageEnableUEFI)
-	h.logger.Infof("Template Output Dir: %s", h.config.TemplateOutputDir)
+	h.logger.Infof("Template Output Dir: %s", h.templateOutputDir)
 	h.logger.Infof("SSH Key File Path: %s", h.config.SSHKeyFilePath)
 	h.logger.Step(2, "Running Prerequisite Checks")
 	for _, tool := range []string{"qemu-img", "virt-customize"} {
@@ -538,6 +543,7 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 		h.config, h.logger, namespace, objectName,
 		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
+		h.templateOutputDir,
 	)
 	return tfGen.GenerateTemplate()
 }
@@ -552,6 +558,7 @@ func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 		h.config, h.logger, namespace, objectName,
 		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
+		h.templateOutputDir,
 	)
 	return tfGen.DeployTemplate()
 }
@@ -570,8 +577,8 @@ func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
 		}
 	}
 	if !h.config.SkipTemplate {
-		if _, err := os.Stat(h.config.TemplateOutputDir); err == nil {
-			h.logger.Successf("✓ Template files exist in: %s", h.config.TemplateOutputDir)
+		if _, err := os.Stat(h.templateOutputDir); err == nil {
+			h.logger.Successf("✓ Template files exist in: %s", h.templateOutputDir)
 		}
 	}
 	h.logger.Success("Workflow verification complete")
@@ -581,7 +588,7 @@ func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
 		h.logger.Info("1. Check the OCI console for the deployed instance")
 		h.logger.Info("2. Verify the instance is running as expected")
 	} else {
-		h.logger.Infof("1. Navigate to: %s", h.config.TemplateOutputDir)
+		h.logger.Infof("1. Navigate to: %s", h.templateOutputDir)
 		h.logger.Info("2. Run: tofu init && tofu apply")
 		h.logger.Info("3. Check the OCI console for the deployed instance")
 	}
