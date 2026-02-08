@@ -77,7 +77,7 @@ export OCI_SUBNET_ID="ocid1.subnet.oc1..."
 export OCI_REGION="us-ashburn-1"
 export OCI_IMAGE_OS="Debian"  
 export OCI_IMAGE_OS_VERSION="13"  
-export OCI_IMAGE_NAME="debian-13-oci"   
+export OCI_IMAGE_NAME="debian-13-image"
 export OCI_INSTANCE_NAME="debian-13-instance"  
 export SSH_KEY_FILE="/path/to/your/public_key.pub"  
 ./kopru &
