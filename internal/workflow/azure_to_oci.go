@@ -201,7 +201,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get OCI namespace: %w", err)
 	}
-	h.logger.Successf("✓ OCI namespace retrieved:")
+	h.logger.Successf("✓ OCI namespace retrieved: %s", namespace)
 	bucketExists, err := h.ociProvider.CheckBucketExists(ctx, namespace, h.config.OCIBucketName)
 	if err != nil {
 		return fmt.Errorf("failed to check bucket: %w", err)
@@ -262,7 +262,7 @@ func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 	h.logger.Infof("Configuring QCOW2 file: %s", qcow2File)
 	osType := h.config.OCIImageOS
 	if common.IsLinuxOS(osType) {
-		h.logger.Info("Applying OS configurations using virt-customize...")
+		h.logger.Info("Applying OS configurations ...")
 		if err := common.ExecuteOSConfigScript(qcow2File, osType, h.SourcePlatform(), h.logger); err != nil {
 			return fmt.Errorf("failed to execute OS configuration script: %w", err)
 		}

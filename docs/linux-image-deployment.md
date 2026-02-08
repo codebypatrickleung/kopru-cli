@@ -1,6 +1,6 @@
 # Linux Image to OCI Deployment Workflow
 
-This guide provides detailed steps for deploying Linux cloud images directly to Oracle Cloud Infrastructure (OCI) using Kopru CLI.
+This guide provides detailed steps for deploying Linux cloud images directly to Oracle Cloud Infrastructure (OCI) using the Kopru CLI.
 
 ## Supported Configurations
 
@@ -15,21 +15,11 @@ Kopru supports direct deployment of Linux cloud images to OCI. You can use any L
 - **Execution Environment**: Oracle Linux 9 in OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
-## Image Preparation
-
-Kopru automatically configures images for OCI including:
-
-- iSCSI initiator installation
-- iSCSI kernel parameter configuration 
-- Initramfs rebuild
-- Cloud-init version 20.3+ verification
-- Oracle datasource configuration
-
 ## Prerequisites
 
 ### Step 1: Launch an Oracle Linux 9 Instance in OCI
 
-See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this Virtual Machine has security best practices applied.
+See the [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this virtual machine has security best practices applied.
 
 ### Step 2: Clone the Repository
 
@@ -60,15 +50,22 @@ go build -buildvcs=false -o kopru ./cmd/kopru
 
 ### Step 5: Authentication Setup
 
-Kopru uses `API Key-Based Authentication` for OCI authentication. See [OCI Authentication doc](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#configfile). 
+Kopru uses API key-based authentication for OCI. For OCI, ensure your user or group has the necessary IAM policies for the target compartment.
 
-For detailed authentication instructions, see [Authentication Setup Guide](authentication-setup.md).
+See [OCI Authentication documentation](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#configfile) for more details.
 
+### Setting up OCI Credentials
+
+Essentially, you just need to run `oci setup config`, and this config file will be used by Kopru as well as OpenTofu (or Terraform) automatically.
+
+```bash
+oci setup config
+```
+
+This command will guide you through setting up your OCI configuration file.
 ## Running the Deployment
 
-For Linux cloud image deployment, you only need to specify the target OCI configuration and the OS image URL. The image will be automatically downloaded, configured, and deployed.
-
-### Using Environment Variables
+There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet.
 
 ```bash
 export SOURCE_PLATFORM="linux_image"
@@ -79,33 +76,17 @@ export OCI_SUBNET_ID="ocid1.subnet.oc1..."
 export OCI_REGION="us-ashburn-1"
 export OCI_IMAGE_OS="Debian"  
 export OCI_IMAGE_OS_VERSION="13"  
-export OCI_BUCKET_NAME="linux-images"  
 export OCI_IMAGE_NAME="debian-13-oci"   
 export OCI_INSTANCE_NAME="debian-13-instance"  
 export SSH_KEY_FILE="/path/to/your/public_key.pub"  
-./kopru
+./kopru &
 ```
 
 For a full list of parameters, see `./kopru --help` or refer to the [Configuration Parameters](../kopru-config.env.template) document.
 
-## Workflow Steps
-
-The Linux Image to OCI workflow will:
-
-1. Download the Linux cloud image from the specified URL (QCOW2 format)
-2. Configure the image for OCI:
-   - Install iSCSI initiator (open-iscsi package)
-   - Add kernel parameters (rd.iscsi.ibft=1 rd.iscsi.firmware=1)
-   - Rebuild initramfs with iSCSI modules
-   - Verify cloud-init is version 20.3 or later
-   - Configure Oracle as the authoritative cloud-init datasource
-3. Upload the configured image to OCI Object Storage
-4. Create a custom image in OCI
-5. Deploy a compute instance from the custom image
-
 ## Manual OpenTofu Deployment (Optional)
 
-This is an optional step as the tool can auto-deploy the generated template. If you used `--skip-template-deploy`, navigate to the `template-output` directory and run OpenTofu commands to deploy the generated template:
+This is an optional step, as the tool can auto-deploy the generated template. If you used `--skip-template-deploy`, navigate to the `template-output` directory and run OpenTofu commands to deploy the generated template:
 
 ```bash
 cd ./template-output
@@ -114,7 +95,7 @@ tofu plan
 tofu apply
 ```
 
-If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core, and is part of the Linux Foundation. The generated templates maintain compatibility.
+If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core and is part of the Linux Foundation. The generated templates maintain compatibility.
 
 ## Logging
 
@@ -122,4 +103,4 @@ Kopru creates a log file in the current directory named `kopru-<timestamp>.log`.
 
 ## Post-Deployment
 
-Ensure health checks and testing are performed post-deployment to validate success. The default user to login is debian for Debian, fedora for Fedora, and cloud-user for CentOS Stream.
+Ensure health checks and testing are performed post-deployment to validate success. The default user to log in is `debian` for Debian, `fedora` for Fedora, and `cloud-user` for CentOS Stream.

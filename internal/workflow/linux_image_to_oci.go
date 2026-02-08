@@ -115,7 +115,6 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image OS Version: %s", h.config.OCIImageOSVersion)
 	h.logger.Infof("Template Output Dir: %s", h.config.TemplateOutputDir)
 	h.logger.Infof("SSH Key File Path: %s", h.config.SSHKeyFilePath)
-	
 	h.logger.Step(2, "Running Prerequisite Checks")
 	for _, tool := range []string{"qemu-img", "virt-customize", "curl"} {
 		if err := common.CheckCommand(tool); err != nil {
@@ -123,7 +122,6 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 		}
 		h.logger.Successf("✓ %s is installed", tool)
 	}
-	
 	availableBytes, err := common.GetAvailableDiskSpace(".", common.MinDiskSpaceGB)
 	if err != nil {
 		h.logger.Warning(fmt.Sprintf("Disk space check: %v", err))
@@ -131,17 +129,16 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}
 	h.logger.Warning("Ignore this warning if your available disk space exceeds 50 GB.")
-	
-	// Set default OS values if not provided
 	if h.config.OCIImageOS == "" {
-		h.config.OCIImageOS = "Generic Linux"
-		h.logger.Infof("OCI_IMAGE_OS not set, using default: %s", h.config.OCIImageOS)
+		return fmt.Errorf("operating system (OCI_IMAGE_OS) is required when migrating a Compute instance. Allowed values: 'Oracle Linux', 'AlmaLinux', 'CentOS', 'Debian', 'RHEL', 'Rocky Linux', 'SUSE', 'Ubuntu'")
 	}
-	if h.config.OCIImageOSVersion == "" {
-		h.config.OCIImageOSVersion = "1.0"
-		h.logger.Infof("OCI_IMAGE_OS_VERSION not set, using default: %s", h.config.OCIImageOSVersion)
+	allowedOS := map[string]struct{}{
+		"Oracle Linux": {}, "AlmaLinux": {}, "CentOS": {}, "Debian": {}, "RHEL": {},
+		"Rocky Linux": {}, "SUSE": {}, "Ubuntu": {}, "Generic Linux": {},
 	}
-	
+	if _, ok := allowedOS[h.config.OCIImageOS]; !ok {
+		return fmt.Errorf("invalid OCI_IMAGE_OS: '%s'. Allowed values: 'Oracle Linux', 'AlmaLinux', 'CentOS', 'Debian', 'RHEL', 'Rocky Linux', 'SUSE', 'Ubuntu', 'Windows'", h.config.OCIImageOS)
+	}
 	h.logger.Successf("✓ Operating system configured for OCI: %s %s", h.config.OCIImageOS, h.config.OCIImageOSVersion)
 	
 	// Set image and instance names if using defaults
@@ -163,18 +160,15 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 		return fmt.Errorf("OCI compartment check failed: %w", err)
 	}
 	h.logger.Success("✓ OCI compartment is accessible")
-	
 	if err := h.ociProvider.CheckSubnetExists(ctx, h.config.OCISubnetID); err != nil {
 		return fmt.Errorf("OCI subnet check failed: %w", err)
 	}
 	h.logger.Success("✓ OCI subnet is accessible")
-	
 	namespace, err := h.ociProvider.GetNamespace(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get OCI namespace: %w", err)
 	}
 	h.logger.Successf("✓ OCI namespace retrieved: %s", namespace)
-	
 	bucketExists, err := h.ociProvider.CheckBucketExists(ctx, namespace, h.config.OCIBucketName)
 	if err != nil {
 		return fmt.Errorf("failed to check bucket: %w", err)
@@ -184,7 +178,6 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 	} else {
 		h.logger.Successf("✓ Bucket '%s' exists", h.config.OCIBucketName)
 	}
-	
 	h.logger.Success("Prerequisite checks passed")
 	return nil
 }
@@ -237,14 +230,13 @@ func (h *LinuxImageToOCIHandler) downloadOSImage(ctx context.Context) error {
 
 func (h *LinuxImageToOCIHandler) configureImage(ctx context.Context) error {
 	h.logger.Step(4, "Configuring Image for OCI")
-	
 	qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
 	h.logger.Infof("Configuring QCOW2 file: %s", qcow2File)
 	
-	h.logger.Info("Applying Linux Image to OCI configurations using virt-customize...")
+	h.logger.Info("Applying OS configurations ...")
 	if err := common.ExecuteOSConfigScript(qcow2File, h.config.OCIImageOS, h.SourcePlatform(), h.logger); err != nil {
 		return fmt.Errorf("failed to execute OS configuration script: %w", err)
 	}
@@ -260,12 +252,10 @@ func (h *LinuxImageToOCIHandler) uploadImage(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
-	
 	namespace, err := h.ociProvider.GetNamespace(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get namespace: %w", err)
 	}
-	
 	bucketExists, err := h.ociProvider.CheckBucketExists(ctx, namespace, h.config.OCIBucketName)
 	if err != nil {
 		return fmt.Errorf("failed to check bucket: %w", err)
@@ -276,13 +266,11 @@ func (h *LinuxImageToOCIHandler) uploadImage(ctx context.Context) error {
 			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 	}
-	
 	objectName := filepath.Base(qcow2File)
 	h.logger.Infof("Uploading %s to bucket %s (this may take a while)...", objectName, h.config.OCIBucketName)
 	if err := h.ociProvider.UploadToObjectStorage(ctx, namespace, h.config.OCIBucketName, objectName, qcow2File); err != nil {
 		return fmt.Errorf("failed to upload to Object Storage: %w", err)
 	}
-	
 	h.logger.Success("Image uploaded to OCI")
 	return nil
 }
@@ -303,7 +291,6 @@ func (h *LinuxImageToOCIHandler) getImageImportDetails(ctx context.Context) (nam
 
 func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 	h.logger.Step(6, "Generating Template")
-	
 	if h.osDiskSizeGB == 0 {
 		h.logger.Info("Reading OS disk size from QCOW2 file...")
 		qcow2File, err := common.FindDiskFile(imageExportDir, ".qcow2")
@@ -321,12 +308,10 @@ func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 			h.logger.Infof("Boot volume will be created with minimum size of %d GB", common.OCIMinVolumeSizeGB)
 		}
 	}
-	
 	namespace, objectName, err := h.getImageImportDetails(ctx)
 	if err != nil {
 		return err
 	}
-	
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, namespace, objectName,
 		[]string{}, []string{}, 
@@ -336,13 +321,11 @@ func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 }
 
 func (h *LinuxImageToOCIHandler) deployTemplate(ctx context.Context) error {
-	h.logger.Step(7, "Deploying the template")
-	
+	h.logger.Step(7, "Deploying the template")	
 	namespace, objectName, err := h.getImageImportDetails(ctx)
 	if err != nil {
 		return err
-	}
-	
+	}	
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, namespace, objectName,
 		[]string{}, []string{},
@@ -359,13 +342,11 @@ func (h *LinuxImageToOCIHandler) verifyWorkflow(ctx context.Context) error {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
 	}
-	
 	if !h.config.SkipTemplate {
 		if _, err := os.Stat(h.config.TemplateOutputDir); err == nil {
 			h.logger.Successf("✓ Template files exist in: %s", h.config.TemplateOutputDir)
 		}
 	}
-	
 	h.logger.Success("Workflow verification complete")
 	h.logger.Info("=========================================")
 	h.logger.Info("Next Steps:")

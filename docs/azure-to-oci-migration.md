@@ -4,10 +4,10 @@ This guide provides detailed steps for migrating Azure VMs to Oracle Cloud Infra
 
 ## Supported Configurations
 
-Kopru has been tested using the Azure platform images listed below:
+Kopru has been tested with the Azure platform images listed below:
 
 - **Source Platform**: Microsoft Azure 
-- **Operating System**: (more OSes coming soon)
+- **Operating System**: (If the OS is not listed, you might need to update the OS configuration script or just drop me a [message on Linkedin](https://www.linkedin.com/in/pgwl/))
   - Ubuntu 22.04 LTS (x86_64) 
   - Ubuntu 24.04 LTS (x86_64 and ARM)
   - Debian 13 Trixie (x86_64)
@@ -30,7 +30,7 @@ Before migrating, ensure that the source OS has virtio drivers installed.
 
 #### Ubuntu/Debian
 
-Virtio drivers are included by default, but always good to verify.
+Virtio drivers are included by default, but it's always good to verify.
 
 To check if virtio drivers are compiled into the kernel, run:
 ```bash
@@ -46,7 +46,7 @@ sudo lsinitrd /boot/initramfs-$(uname -r).img | grep virtio
 
 Virtio drivers are included by default, but not included in initramfs by default. 
 
-You may need to rebuild initramfs to include them, run:
+You may need to rebuild initramfs to include them. Run:
 
 ```bash
 KERNEL_VERSION=$(uname -r)
@@ -60,7 +60,7 @@ Install the Virtio drivers by following the instructions [here](https://docs.ora
 
 ### Step 2: Launch an Oracle Linux 9 Instance in OCI
 
-See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this Virtual Machine has security best practices applied, as it will handle all the VM's data during migration. Consider using [Cloud Guard](https://www.oracle.com/uk/security/cloud-security/cloud-guard/) to monitor the instance for any security issues.
+See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this virtual machine has security best practices applied, as it will handle all the VM's data during migration. Consider using [Cloud Guard](https://www.oracle.com/uk/security/cloud-security/cloud-guard/) to monitor the instance for any security issues.
 
 ### Step 3: Clone the Repository
 
@@ -93,7 +93,43 @@ go build -buildvcs=false -o kopru ./cmd/kopru
 
 Kopru does not manage authentication itself. You must configure authentication for both Azure and OCI using official SDK or CLI tools.
 
-For detailed authentication instructions, see [Authentication Setup Guide](authentication-setup.md).
+## Azure Authentication (for Azure to OCI Migration)
+
+Kopru uses a `Service Principal` for Azure authentication. For Azure, Kopru requires the `Disk Snapshot Contributor` and `Reader` roles on the VM's resource group.
+
+See [Azure Authentication documentation](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps) for more details.
+
+### Setting up Azure Credentials
+
+Set the following environment variables:
+
+```bash
+export AZURE_TENANT_ID="your-tenant-id"
+export AZURE_CLIENT_ID="your-client-id"
+export AZURE_CLIENT_SECRET="your-client-secret"
+export AZURE_SUBSCRIPTION_ID="your-subscription-id"
+```
+
+### Required Azure Permissions
+
+- `Disk Snapshot Contributor` - Allows creating and managing disk snapshots
+- `Reader` - Allows reading resource group and VM information
+
+## OCI Authentication (required for all workflows)
+
+Kopru uses API key-based authentication for OCI. For OCI, ensure your user or group has the necessary IAM policies for the target compartment.
+
+See [OCI Authentication documentation](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#configfile) for more details.
+
+### Setting up OCI Credentials
+
+Essentially, you just need to run `oci setup config`, and this config file will be used by Kopru as well as OpenTofu (or Terraform) automatically.
+
+```bash
+oci setup config
+```
+
+This command will guide you through setting up your OCI configuration file.
 
 ## Running the Migration
 
@@ -118,7 +154,7 @@ For a full list of parameters, see `./kopru --help` or refer to the [Configurati
 
 ## Manual OpenTofu Deployment (Optional)
 
-This is an optional step as the tool can auto-deploy the generated template. If you used `--skip-template-deploy`, navigate to the `template-output` directory and run OpenTofu commands to deploy the generated template:
+This is an optional step, as the tool can auto-deploy the generated template. If you used `--skip-template-deploy`, navigate to the `template-output` directory and run OpenTofu commands to deploy the generated template:
 
 ```bash
 cd ./template-output
@@ -127,7 +163,7 @@ tofu plan
 tofu apply
 ```
 
-If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core, and is part of the Linux Foundation. The generated templates maintain compatibility.
+If you prefer Terraform, the generated templates are compatible. Just replace `tofu` with `terraform` in the commands above. OpenTofu is a fork of Terraform that has a fully open-source core and is part of the Linux Foundation. The generated templates maintain compatibility.
 
 ## Logging
 
@@ -135,4 +171,4 @@ Kopru creates a log file in the current directory named `kopru-<timestamp>.log`.
 
 ## Post-Migration
 
-As with all migration, ensure health checks and testing are performed post-migration to validate success.
+As with all migrations, ensure health checks and testing are performed post-migration to validate success.
