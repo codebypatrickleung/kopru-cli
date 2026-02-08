@@ -7,13 +7,12 @@ This guide provides detailed steps for migrating Azure VMs to Oracle Cloud Infra
 Kopru has been tested with the Azure platform images listed below:
 
 - **Source Platform**: Microsoft Azure 
-- **Operating System**: (If the OS is not listed, you might need to update the OS configuration script or just drop me a [message on Linkedin](https://www.linkedin.com/in/pgwl/))
+- **Operating System**: (If the OS is not listed, you might need to update the [OS configuration script](./os-configurations.md))
   - Ubuntu 22.04 LTS (x86_64) 
   - Ubuntu 24.04 LTS (x86_64 and ARM)
   - Debian 13 Trixie (x86_64)
   - Red Hat Enterprise Linux 9.4 (x86_64)
-  - Windows Server 2022 Datacenter
-  - Windows Server 2019 Datacenter
+  - Windows Server 2019, 2022, 2025 Datacenter
   - SuSE Enterprise Linux 15 SP6 (x86_64)  
 - **Execution Environment**: Oracle Linux 9 in OCI
 - **Target Platform**: Oracle Cloud Infrastructure

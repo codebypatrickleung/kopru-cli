@@ -20,29 +20,19 @@ Kopru currently supports two main import workflows:
 
 Migrate Azure VMs (Ubuntu, Debian, RHEL, Windows Server) to Oracle Cloud Infrastructure with automatic data disk migration and virtio driver support.
 
-**Validated Operating Systems:**
-- Ubuntu 22.04 LTS, 24.04 LTS
-- Debian 13 Trixie
-- Red Hat Enterprise Linux 9.4
-- Windows Server 2019, 2022
-- SuSE Enterprise Linux 15 SP6
 
 [📖 View Detailed Azure to OCI Migration Guide](docs/azure-to-oci-migration.md)
 
 ### Import Linux Cloud Images to OCI
 
-For OSes that are not available in OCI-provided images or the Marketplace, you can use this workflow to deploy Linux cloud images directly to OCI. By default, this workflow includes the installation of the iSCSI initiator, which is a prerequisite for deploying an image as Bare Metal.
+For OSes that are not available in OCI-provided images or the Marketplace, you can use this workflow to deploy Linux cloud images directly to OCI.
 
-**Validated Operating Systems:** 
-- Debian 13 Trixie
-- Fedora 43
-- CentOS Stream 10
 
 [📖 View Detailed Linux Cloud Image Deployment Guide](docs/linux-image-deployment.md)
 
 ## Quick Start
 
-1. **Launch an Oracle Linux 9 instance in OCI** - [OCI Documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm)
+1. **Launch an Oracle Linux 9 instance in OCI** - [OCI Documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Use a separate block device for the kopru-cli directory.
 
 2. **Clone the repository**:
    ```bash

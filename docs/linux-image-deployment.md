@@ -4,11 +4,11 @@ This guide provides detailed steps for deploying Linux cloud images directly to 
 
 ## Supported Configurations
 
-Kopru supports direct deployment of Linux cloud images to OCI. You can use any Linux distribution that provides QCOW2 format cloud images.
+Kopru supports direct deployment of Linux cloud images to OCI. Kopru has been tested with the Linux distribution listed below:
 
 - **Source**: Linux Cloud Images (downloaded from distribution repositories)
-- **Supported Formats**: QCOW2
-- **Supported Distributions**: 
+- **Formats**: QCOW2
+- **Distributions**: 
   - [Debian](https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2)
   - [Fedora](https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2)
   - [CentOS Stream](https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2)
@@ -63,6 +63,7 @@ oci setup config
 ```
 
 This command will guide you through setting up your OCI configuration file.
+
 ## Running the Deployment
 
 There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet.
