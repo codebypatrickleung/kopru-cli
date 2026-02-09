@@ -12,9 +12,9 @@ Kopru is a command-line tool written in Go that automates the import of Compute 
 - **Extensible & Open Source**: Easily adaptable for new platforms and OSes.
 - **Multiple Source Options**: Supports Azure VM migration and direct Linux cloud image deployment.
 
-## Supported Workflows (More workflows coming)
+## Supported Workflows 
 
-Kopru currently supports two main import workflows:
+Kopru currently supports two main import workflows: (More workflows coming)
 
 ### Migrate Azure VMs to OCI
 
