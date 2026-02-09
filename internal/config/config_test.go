@@ -145,39 +145,6 @@ func TestConfigDefaults(t *testing.T) {
 	}
 }
 
-func TestTemplateOutputDirNaming(t *testing.T) {
-	tests := []struct {
-		name             string
-		azureComputeName string
-		explicitDir      string
-		expectedDir      string
-	}{
-		{"Default dir with Azure Compute name", "test-vm", "", "./test-vm-template-output"},
-		{"Azure Compute name with special characters", "Test_VM-123", "", "./test_vm-123-template-output"},
-		{"Explicit dir overrides default", "test-vm", "./custom-dir", "./custom-dir"},
-		{"No Azure Compute name uses default", "", "", "./template-output"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			os.Clearenv()
-			if tt.azureComputeName != "" {
-				os.Setenv("AZURE_COMPUTE_NAME", tt.azureComputeName)
-			}
-			if tt.explicitDir != "" {
-				os.Setenv("TEMPLATE_OUTPUT_DIR", tt.explicitDir)
-			}
-			cfg, err := Load("")
-			if err != nil {
-				t.Fatalf("Failed to load config: %v", err)
-			}
-			if cfg.TemplateOutputDir != tt.expectedDir {
-				t.Errorf("Expected TemplateOutputDir to be '%s', got '%s'", tt.expectedDir, cfg.TemplateOutputDir)
-			}
-		})
-	}
-}
-
 func TestOCIInstanceNameNaming(t *testing.T) {
 	tests := []struct {
 		name             string

@@ -27,6 +27,11 @@ func NewManager(cfg *config.Config, log *logger.Logger, version string) (*Manage
 		return nil, fmt.Errorf("failed to register Azure to OCI handler: %w", err)
 	}
 
+	// Register the Linux Image to OCI workflow handler
+	if err := registry.Register(NewLinuxImageToOCIHandler()); err != nil {
+		return nil, fmt.Errorf("failed to register Linux Image to OCI handler: %w", err)
+	}
+
 	// Get the appropriate workflow handler for the source and target platforms
 	handler, err := registry.Get(cfg.SourcePlatform, cfg.TargetPlatform)
 	if err != nil {
