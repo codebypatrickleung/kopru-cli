@@ -1,6 +1,6 @@
 # Kopru
 
-Kopru is a command-line tool written in Go that automates the import of Compute instances to Oracle Cloud Infrastructure (OCI). While manual migration through the OCI console is possible, it quickly becomes cumbersome and error-prone when handling intricate setups. Kopru simplifies this process by providing an extensible, repeatable workflow that accelerates and standardises Compute deployments into OCI.
+Kopru is a command-line tool written in Go that automates the import of Compute instances to Oracle Cloud Infrastructure (OCI). While manual steps through the OCI console is possible, it quickly becomes cumbersome and error-prone when handling intricate setups. Kopru simplifies this process by providing an extensible, repeatable workflow that accelerates and standardises Compute deployments into OCI.
 
 ## Features
 
