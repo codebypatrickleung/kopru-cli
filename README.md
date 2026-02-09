@@ -1,6 +1,6 @@
 # Kopru
 
-Kopru is a command-line tool written in Go that automates the import of Compute instances to Oracle Cloud Infrastructure (OCI). While manual migration through the OCI console is possible, it quickly becomes cumbersome and error-prone when handling multiple instances or intricate setups. Kopru simplifies this process by providing an extensible, repeatable workflow that accelerates and standardizes Compute deployments into OCI.
+Kopru is a command-line tool written in Go that automates the import of Compute instances to Oracle Cloud Infrastructure (OCI). While manual migration through the OCI console is possible, it quickly becomes cumbersome and error-prone when handling intricate setups. Kopru simplifies this process by providing an extensible, repeatable workflow that accelerates and standardises Compute deployments into OCI.
 
 ## Features
 
@@ -18,7 +18,7 @@ Kopru currently supports two main import workflows:
 
 ### Migrate Azure VMs to OCI
 
-Migrating VMs from Azure to OCI can be complex. Kopru automates this process by exporting the VM, converting it to a compatible format, and generating an OpenTofu template for deployment in OCI.
+Migrating VMs from Azure to OCI can be complex. Kopru automates this process by exporting the VM, converting it to a compatible format, and generating an OpenTofu template for deployment in OCI. If your source VM has data disks attached, Kopru will automatically migrate and reattach them in OCI.
 
 [📖 View Detailed Azure to OCI Migration Guide](docs/azure-to-oci-migration.md)
 
