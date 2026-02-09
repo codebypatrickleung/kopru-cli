@@ -66,7 +66,7 @@ This command will guide you through setting up your OCI configuration file.
 
 ## Running the Deployment
 
-There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source Azure resource group/VM and target OCI compartment/subnet.
+There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source URL and target OCI compartment/subnet.
 
 ```bash
 export SOURCE_PLATFORM="linux_image"

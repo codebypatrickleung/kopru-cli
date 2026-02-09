@@ -92,7 +92,7 @@ go build -buildvcs=false -o kopru ./cmd/kopru
 
 Kopru does not manage authentication itself. You must configure authentication for both Azure and OCI using official SDK or CLI tools.
 
-## Azure Authentication (for Azure to OCI Migration)
+## Azure Authentication 
 
 Kopru uses a `Service Principal` for Azure authentication. For Azure, Kopru requires the `Disk Snapshot Contributor` and `Reader` roles on the VM's resource group.
 
