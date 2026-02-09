@@ -35,6 +35,15 @@ main() {
     log_info "OS ID: $OS_ID"
     log_info "=== Applying Linux Image to OCI configurations ==="
     add_oci_cloud_init "$IMAGE_FILE" "$OS_FAMILY" "$OS_ID"
+    
+    if [[ "$OS_ID" == "debian" ]]; then
+        log_info "=== Configuring iSCSI for Debian OS ==="
+        install_iscsi_initiator "$IMAGE_FILE"
+        rebuild_iscsi_initramfs "$IMAGE_FILE"
+        configure_fstab_netdev "$IMAGE_FILE"
+        configure_iscsi_automatic_startup "$IMAGE_FILE"
+    fi
+    
     cloud_init_clean "$IMAGE_FILE" "$OS_FAMILY"
     log_info "=== Linux Image to OCI configuration complete ==="
 }
