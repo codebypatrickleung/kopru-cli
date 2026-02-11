@@ -114,7 +114,7 @@ export AZURE_SUBSCRIPTION_ID="your-subscription-id"
 - `Disk Snapshot Contributor` - Allows creating and managing disk snapshots
 - `Reader` - Allows reading resource group and VM information
 
-## OCI Authentication (required for all workflows)
+## OCI Authentication
 
 Kopru uses API key-based authentication for OCI. For OCI, ensure your user or group has the necessary IAM policies for the target compartment.
 

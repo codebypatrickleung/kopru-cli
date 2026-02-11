@@ -1,14 +1,14 @@
 # Linux Image to OCI Deployment Workflow
 
-This guide provides detailed steps for deploying Linux cloud images directly to Oracle Cloud Infrastructure (OCI) using the Kopru CLI.
+This guide provides detailed steps for deploying Linux cloud images directly to Oracle Cloud Infrastructure (OCI) using Kopru CLI.
 
 ## Supported Configurations
 
-Kopru supports direct deployment of Linux cloud images to OCI. Kopru has been tested with the Linux distribution listed below:
+Kopru supports direct deployment of Linux cloud images to OCI. Kopru has been tested with the Linux distribution listed below: 
 
 - **Source**: Linux Cloud Images (downloaded from distribution repositories)
 - **Formats**: QCOW2
-- **Distributions**: 
+- **Operating System**: (If the OS is not listed, you might need to update the [OS configuration script](./os-configurations.md))
   - [Debian](https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2)
   - [Fedora](https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2)
   - [CentOS Stream](https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2)
@@ -19,7 +19,7 @@ Kopru supports direct deployment of Linux cloud images to OCI. Kopru has been te
 
 ### Step 1: Launch an Oracle Linux 9 Instance in OCI
 
-See the [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this virtual machine has security best practices applied.
+See the [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Ensure this virtual machine has security best practices applied. Consider using [Cloud Guard](https://www.oracle.com/uk/security/cloud-security/cloud-guard/) to monitor the instance for any security issues.
 
 ### Step 2: Clone the Repository
 
@@ -67,6 +67,8 @@ This command will guide you through setting up your OCI configuration file.
 ## Running the Deployment
 
 There are three ways to provide Kopru with the required parameters: environment variables, command-line flags, or a configuration file. There are only a few required parameters, which essentially identify the source URL and target OCI compartment/subnet.
+
+### Using Environment Variables
 
 ```bash
 export SOURCE_PLATFORM="linux_image"
