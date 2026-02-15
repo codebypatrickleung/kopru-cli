@@ -199,18 +199,27 @@ func (p *Provider) GetLocalInstanceID(ctx context.Context) (string, error) {
 	return instanceID, nil
 }
 
-// CreateBlockVolume creates a new block volume.
+// CreateBlockVolume creates a new block volume with storage autoscaling enabled.
 func (p *Provider) CreateBlockVolume(ctx context.Context, compartmentID, availabilityDomain, displayName string, sizeInGBs int64) (string, error) {
 	client, err := core.NewBlockstorageClientWithConfigurationProvider(p.configProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to create block storage client: %w", err)
 	}
+	
+	maxVpusPerGB := int64(120)
+	autotunePolicies := []core.AutotunePolicy{
+		core.PerformanceBasedAutotunePolicy{
+			MaxVpusPerGB: &maxVpusPerGB,
+		},
+	}
+	
 	req := core.CreateVolumeRequest{
 		CreateVolumeDetails: core.CreateVolumeDetails{
 			CompartmentId:      &compartmentID,
 			AvailabilityDomain: &availabilityDomain,
 			DisplayName:        &displayName,
 			SizeInGBs:          &sizeInGBs,
+			AutotunePolicies:   autotunePolicies,
 		},
 	}
 	resp, err := client.CreateVolume(ctx, req)
@@ -223,6 +232,7 @@ func (p *Provider) CreateBlockVolume(ctx context.Context, compartmentID, availab
 	if err != nil {
 		return "", fmt.Errorf("volume did not become available: %w", err)
 	}
+	p.logger.Successf("Volume created successfully with autoscaling enabled: %s", volumeID)
 	return volumeID, nil
 }
 
