@@ -86,11 +86,9 @@ install_go(){
 install_opentofu() {
     if ! command -v tofu &>/dev/null; then
         echo "Installing OpenTofu..."
-        curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
-        chmod +x install-opentofu.sh
-        echo "Please inspect install-opentofu.sh before proceeding."
-        ./install-opentofu.sh --install-method rpm
-        rm -f install-opentofu.sh
+        if command -v tofu &>/dev/null; then
+            sudo dnf install -y opentofu --enablerepo=ol9_developer_EPEL
+         fi   
     else
         echo "✓ OpenTofu already installed."
     fi
