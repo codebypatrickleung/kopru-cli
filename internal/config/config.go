@@ -34,16 +34,8 @@ type Config struct {
 	OCIAvailabilityDomain string
 	OSImageURL            string
 	SSHKeyFilePath        string
-	SkipPrereq            bool
 	SkipExport            bool
-	SkipConvert           bool
-	SkipConfigure         bool
-	SkipUpload            bool
-	SkipDDExport          bool
-	SkipDDImport          bool
-	SkipTemplate          bool
 	SkipTemplateDeploy    bool
-	SkipVerify            bool
 	Debug                 bool
 }
 
@@ -100,16 +92,8 @@ func Load(configFile string) (*Config, error) {
 		OCIAvailabilityDomain: viper.GetString("oci_availability_domain"),
 		OSImageURL:            viper.GetString("os_image_url"),
 		SSHKeyFilePath:        viper.GetString("ssh_key_file"),
-		SkipPrereq:            viper.GetBool("skip_prereq"),
 		SkipExport:            viper.GetBool("skip_os_export"),
-		SkipConvert:           viper.GetBool("skip_os_convert"),
-		SkipConfigure:         viper.GetBool("skip_os_configure"),
-		SkipUpload:            viper.GetBool("skip_os_upload"),
-		SkipDDExport:          viper.GetBool("skip_dd_export"),
-		SkipDDImport:          viper.GetBool("skip_dd_import"),
-		SkipTemplate:          viper.GetBool("skip_template"),
 		SkipTemplateDeploy:    viper.GetBool("skip_template_deploy"),
-		SkipVerify:            viper.GetBool("skip_verify"),
 		Debug:                 viper.GetBool("debug"),
 	}
 

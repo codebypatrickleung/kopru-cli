@@ -15,6 +15,7 @@ import (
 	"github.com/codebypatrickleung/kopru-cli/internal/config"
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 	"github.com/codebypatrickleung/kopru-cli/internal/template"
+	"github.com/oracle/oci-go-sdk/v65/core"
 )
 
 // LinuxImageToOCIHandler implements the workflow for creating OCI instances from Linux cloud images.
@@ -27,6 +28,7 @@ type LinuxImageToOCIHandler struct {
 	osArchitecture    string
 	imageExportDir    string
 	templateOutputDir string
+	importedImageID   string
 }
 
 func NewLinuxImageToOCIHandler() *LinuxImageToOCIHandler      { return &LinuxImageToOCIHandler{} }
@@ -67,12 +69,13 @@ func (h *LinuxImageToOCIHandler) Execute(ctx context.Context) error {
 		errMsg  string
 		fn      func(context.Context) error
 	}{
-		{h.config.SkipPrereq, "Skipping prerequisite checks (SKIP_PREREQ=true)", "prerequisite checks failed", h.runPrerequisites},
 		{h.config.SkipExport, "Skipping OS image download (SKIP_OS_EXPORT=true)", "OS image download failed", h.downloadOSImage},
-		{h.config.SkipConfigure, "Skipping image configuration (SKIP_OS_CONFIGURE=true)", "image configuration failed", h.configureImage},
-		{h.config.SkipUpload, "Skipping image upload (SKIP_OS_UPLOAD=true)", "image upload failed", h.uploadImage},
-		{h.config.SkipTemplate, "Skipping template generation (SKIP_TEMPLATE=true)", "template generation failed", h.generateTemplate},
 	}
+	
+	if err := h.runPrerequisites(ctx); err != nil {
+		return fmt.Errorf("prerequisite checks failed: %w", err)
+	}
+	
 	for _, step := range steps {
 		if step.skip {
 			h.logger.Warning(step.skipMsg)
@@ -81,6 +84,19 @@ func (h *LinuxImageToOCIHandler) Execute(ctx context.Context) error {
 		if err := step.fn(ctx); err != nil {
 			return fmt.Errorf("%s: %w", step.errMsg, err)
 		}
+	}
+	
+	if err := h.configureImage(ctx); err != nil {
+		return fmt.Errorf("image configuration failed: %w", err)
+	}
+	if err := h.uploadImage(ctx); err != nil {
+		return fmt.Errorf("image upload failed: %w", err)
+	}
+	if err := h.importOSImage(ctx); err != nil {
+		return fmt.Errorf("image import failed: %w", err)
+	}
+	if err := h.generateTemplate(ctx); err != nil {
+		return fmt.Errorf("template generation failed: %w", err)
 	}
 
 	if !h.config.SkipTemplateDeploy {
@@ -92,12 +108,8 @@ func (h *LinuxImageToOCIHandler) Execute(ctx context.Context) error {
 		h.logger.Infof("To deploy manually, run: cd %s && tofu init && tofu apply", h.templateOutputDir)
 	}
 
-	if !h.config.SkipVerify {
-		if err := h.verifyWorkflow(ctx); err != nil {
-			return fmt.Errorf("workflow verification failed: %w", err)
-		}
-	} else {
-		h.logger.Warning("Skipping workflow verification (SKIP_VERIFY=true)")
+	if err := h.verifyWorkflow(ctx); err != nil {
+		return fmt.Errorf("workflow verification failed: %w", err)
 	}
 
 	h.logger.Success("=========================================")
@@ -278,7 +290,42 @@ func (h *LinuxImageToOCIHandler) uploadImage(ctx context.Context) error {
 	return nil
 }
 
-// getImageImportDetails retrieves namespace and object name for image import
+func (h *LinuxImageToOCIHandler) importOSImage(ctx context.Context) error {
+	h.logger.Step(6, "Importing OS Image in OCI")
+	
+	namespace, objectName, err := h.getImageImportDetails(ctx)
+	if err != nil {
+		return err
+	}
+
+	imageName := fmt.Sprintf("%s-%s-imported-image", 
+		common.SanitizeName(h.config.OCIImageOS), 
+		common.SanitizeName(h.config.OCIImageOSVersion))
+	
+	h.logger.Infof("Starting OS image import: %s", imageName)
+	h.logger.Info("Image import will run in the background (10-20 minutes)")
+
+	imageID, err := h.ociProvider.ImportImage(
+		ctx,
+		h.config.OCICompartmentID,
+		namespace,
+		h.config.OCIBucketName,
+		objectName,
+		imageName,
+		h.config.OCIImageOS,
+		h.config.OCIImageOSVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to start image import: %w", err)
+	}
+
+	h.importedImageID = imageID
+	h.logger.Successf("OS image import started with ID: %s", imageID)
+	h.logger.Info("Proceeding to template generation while image imports in background...")
+	
+	return nil
+}
+
 func (h *LinuxImageToOCIHandler) getImageImportDetails(ctx context.Context) (namespace, objectName string, err error) {
 	qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2")
 	if err != nil {
@@ -293,7 +340,7 @@ func (h *LinuxImageToOCIHandler) getImageImportDetails(ctx context.Context) (nam
 }
 
 func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
-	h.logger.Step(6, "Generating Template")
+	h.logger.Step(7, "Generating Template")
 	if h.osDiskSizeGB == 0 {
 		h.logger.Info("Reading OS disk size from QCOW2 file...")
 		qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2")
@@ -311,12 +358,8 @@ func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 			h.logger.Infof("Boot volume will be created with minimum size of %d GB", common.OCIMinVolumeSizeGB)
 		}
 	}
-	namespace, objectName, err := h.getImageImportDetails(ctx)
-	if err != nil {
-		return err
-	}
 	tfGen := template.NewOCIGenerator(
-		h.config, h.logger, namespace, objectName,
+		h.config, h.logger, h.importedImageID,
 		[]string{}, []string{}, 
 		h.osDiskSizeGB, 0, 0, h.osArchitecture,
 		h.templateOutputDir,
@@ -324,14 +367,31 @@ func (h *LinuxImageToOCIHandler) generateTemplate(ctx context.Context) error {
 	return tfGen.GenerateTemplate()
 }
 
+func (h *LinuxImageToOCIHandler) waitForImageImportCompletion(ctx context.Context) error {
+	if h.importedImageID == "" {
+		h.logger.Info("No image import was started, skipping wait")
+		return nil
+	}
+
+	h.logger.Info("Checking OS image import status before deployment...")
+	
+	if err := h.ociProvider.WaitForImageState(ctx, h.importedImageID, core.ImageLifecycleStateAvailable); err != nil {
+		return fmt.Errorf("image import did not complete successfully: %w", err)
+	}
+
+	h.logger.Success("OS image import completed successfully")
+	return nil
+}
+
 func (h *LinuxImageToOCIHandler) deployTemplate(ctx context.Context) error {
-	h.logger.Step(7, "Deploying the template")	
-	namespace, objectName, err := h.getImageImportDetails(ctx)
-	if err != nil {
-		return err
-	}	
+	h.logger.Step(8, "Deploying the template")	
+	
+	if err := h.waitForImageImportCompletion(ctx); err != nil {
+		return fmt.Errorf("failed waiting for image import: %w", err)
+	}
+	
 	tfGen := template.NewOCIGenerator(
-		h.config, h.logger, namespace, objectName,
+		h.config, h.logger, h.importedImageID,
 		[]string{}, []string{},
 		h.osDiskSizeGB, 0, 0, h.osArchitecture,
 		h.templateOutputDir,
@@ -340,17 +400,15 @@ func (h *LinuxImageToOCIHandler) deployTemplate(ctx context.Context) error {
 }
 
 func (h *LinuxImageToOCIHandler) verifyWorkflow(ctx context.Context) error {
-	h.logger.Step(8, "Verifying Workflow")
+	h.logger.Step(9, "Verifying Workflow")
 	
 	if !h.config.SkipExport {
 		if qcow2File, err := common.FindDiskFile(h.imageExportDir, ".qcow2"); err == nil {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
 	}
-	if !h.config.SkipTemplate {
-		if _, err := os.Stat(h.templateOutputDir); err == nil {
-			h.logger.Successf("✓ Template files exist in: %s", h.templateOutputDir)
-		}
+	if _, err := os.Stat(h.templateOutputDir); err == nil {
+		h.logger.Successf("✓ Template files exist in: %s", h.templateOutputDir)
 	}
 	h.logger.Success("Workflow verification complete")
 	h.logger.Info("=========================================")

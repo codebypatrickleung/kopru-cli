@@ -14,6 +14,7 @@ import (
 	"github.com/codebypatrickleung/kopru-cli/internal/config"
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 	"github.com/codebypatrickleung/kopru-cli/internal/template"
+	"github.com/oracle/oci-go-sdk/v65/core"
 )
 
 // AzureToOCIHandler implements the workflow for migrating Compute instances from Azure to OCI.
@@ -29,6 +30,7 @@ type AzureToOCIHandler struct {
 	azureVMMemoryGB       int32
 	azureVMArchitecture   string
 	templateOutputDir     string
+	importedImageID       string
 }
 
 func NewAzureToOCIHandler() *AzureToOCIHandler      { return &AzureToOCIHandler{} }
@@ -63,15 +65,15 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 		errMsg  string
 		fn      func(context.Context) error
 	}{
-		{h.config.SkipPrereq, "Skipping prerequisite checks (SKIP_PREREQ=true)", "prerequisite checks failed", h.runPrerequisites},
 		{h.config.SkipExport, "Skipping OS disk export (SKIP_OS_EXPORT=true)", "OS disk export failed", h.exportOSDisk},
-		{h.config.SkipConvert, "Skipping disk conversion (SKIP_OS_CONVERT=true)", "disk conversion failed", h.convertDisk},
-		{h.config.SkipConfigure, "Skipping image configuration (SKIP_OS_CONFIGURE=true)", "image configuration failed", h.configureImage},
-		{h.config.SkipUpload, "Skipping image upload (SKIP_OS_UPLOAD=true)", "image upload failed", h.uploadImage},
-		{h.config.SkipDDExport, "Skipping data disk export (SKIP_DD_EXPORT=true)", "data disk export failed", h.exportDataDisks},
-		{h.config.SkipDDImport, "Skipping data disk import (SKIP_DD_IMPORT=true)", "data disk import failed", h.importDataDisks},
-		{h.config.SkipTemplate, "Skipping template generation (SKIP_TEMPLATE=true)", "template generation failed", h.generateTemplate},
 	}
+	
+	// Run prerequisite checks
+	if err := h.runPrerequisites(ctx); err != nil {
+		return fmt.Errorf("prerequisite checks failed: %w", err)
+	}
+	
+	// Run steps with skip logic
 	for _, step := range steps {
 		if step.skip {
 			h.logger.Warning(step.skipMsg)
@@ -80,6 +82,28 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 		if err := step.fn(ctx); err != nil {
 			return fmt.Errorf("%s: %w", step.errMsg, err)
 		}
+	}
+	
+	if err := h.convertDisk(ctx); err != nil {
+		return fmt.Errorf("disk conversion failed: %w", err)
+	}
+	if err := h.configureImage(ctx); err != nil {
+		return fmt.Errorf("image configuration failed: %w", err)
+	}
+	if err := h.uploadImage(ctx); err != nil {
+		return fmt.Errorf("image upload failed: %w", err)
+	}
+	if err := h.importOSImage(ctx); err != nil {
+		return fmt.Errorf("image import failed: %w", err)
+	}
+	if err := h.exportDataDisks(ctx); err != nil {
+		return fmt.Errorf("data disk export failed: %w", err)
+	}
+	if err := h.importDataDisks(ctx); err != nil {
+		return fmt.Errorf("data disk import failed: %w", err)
+	}
+	if err := h.generateTemplate(ctx); err != nil {
+		return fmt.Errorf("template generation failed: %w", err)
 	}
 
 	if !h.config.SkipTemplateDeploy {
@@ -91,12 +115,8 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 		h.logger.Infof("To deploy manually, run: cd %s && tofu init && tofu apply", h.templateOutputDir)
 	}
 
-	if !h.config.SkipVerify {
-		if err := h.verifyWorkflow(ctx); err != nil {
-			return fmt.Errorf("workflow verification failed: %w", err)
-		}
-	} else {
-		h.logger.Warning("Skipping workflow verification (SKIP_VERIFY=true)")
+	if err := h.verifyWorkflow(ctx); err != nil {
+		return fmt.Errorf("workflow verification failed: %w", err)
 	}
 
 	h.logger.Success("=========================================")
@@ -177,8 +197,8 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	h.logger.Successf("✓ Detected OS type '%s' matches OCI_IMAGE_OS '%s'", osType, h.config.OCIImageOS)
 	h.logger.Successf("✓ Operating system configured for OCI: %s", h.config.OCIImageOS)
-	if common.IsWindowsOS(h.config.OCIImageOS) && h.config.OCIImageOSVersion == "" {
-		return fmt.Errorf("operating system version (OCI_IMAGE_OS_VERSION) is required when migrating a Windows instance")
+	if h.config.OCIImageOSVersion == "" {
+		return fmt.Errorf("operating system version (OCI_IMAGE_OS_VERSION) is required")
 	}
 	h.logger.Successf("✓ Compute instance OS version: %s", h.config.OCIImageOSVersion)
 	if h.config.OCIRegion == "" {
@@ -308,8 +328,41 @@ func (h *AzureToOCIHandler) uploadImage(ctx context.Context) error {
 	return nil
 }
 
+func (h *AzureToOCIHandler) importOSImage(ctx context.Context) error {
+	h.logger.Step(7, "Importing OS Image in OCI")
+	
+	namespace, objectName, err := h.getImageImportDetails(ctx)
+	if err != nil {
+		return err
+	}
+
+	imageName := fmt.Sprintf("%s-imported-image", common.SanitizeName(h.config.AzureComputeName))
+	h.logger.Infof("Starting OS image import: %s", imageName)
+	h.logger.Info("Image import will run in the background (10-20 minutes)")
+
+	imageID, err := h.ociProvider.ImportImage(
+		ctx,
+		h.config.OCICompartmentID,
+		namespace,
+		h.config.OCIBucketName,
+		objectName,
+		imageName,
+		h.config.OCIImageOS,
+		h.config.OCIImageOSVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to start image import: %w", err)
+	}
+
+	h.importedImageID = imageID
+	h.logger.Successf("OS image import started with ID: %s", imageID)
+	h.logger.Info("Continuing with data disk operations while image imports in background...")
+	
+	return nil
+}
+
 func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
-	h.logger.Step(7, "Exporting Data Disks")
+	h.logger.Step(8, "Exporting Data Disks")
 	exportDir := fmt.Sprintf("./%s-data-disk-exports", common.SanitizeName(h.config.AzureComputeName))
 	if err := common.EnsureDir(exportDir); err != nil {
 		return fmt.Errorf("failed to create export directory: %w", err)
@@ -338,7 +391,7 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 }
 
 func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
-	h.logger.Step(8, "Importing Data Disks")
+	h.logger.Step(9, "Importing Data Disks")
 	h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames = []string{}, []string{}
 	exportDir := fmt.Sprintf("./%s-data-disk-exports", common.SanitizeName(h.config.AzureComputeName))
 	if _, err := os.Stat(exportDir); os.IsNotExist(err) {
@@ -353,11 +406,6 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 		h.logger.Info("No data disk VHD files found - skipping data disk import")
 		return nil
 	}
-	if common.IsWindowsOS(h.config.OCIImageOS) && h.config.OCIImageOSVersion == "" {
-		return fmt.Errorf("operating system version (OCI_IMAGE_OS_VERSION) is required when migrating a Windows instance")
-	}
-	h.logger.Infof("Compute instance OS type: %s", h.config.OCIImageOS)
-	h.logger.Infof("Compute instance OS version: %s", h.config.OCIImageOSVersion)
 	h.logger.Infof("Found %d data disk(s) to import", len(vhdFiles))
 	h.logger.Info("Retrieving local instance information...")
 	localInstanceID, err := h.ociProvider.GetLocalInstanceID(ctx)
@@ -500,7 +548,6 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	return nil
 }
 
-// getImageImportDetails retrieves namespace and object name for image import
 func (h *AzureToOCIHandler) getImageImportDetails(ctx context.Context) (namespace, objectName string, err error) {
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
 	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
@@ -516,7 +563,7 @@ func (h *AzureToOCIHandler) getImageImportDetails(ctx context.Context) (namespac
 }
 
 func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
-	h.logger.Step(9, "Generating Template")
+	h.logger.Step(10, "Generating Template")
 	if h.azureOSDiskSizeGB == 0 {
 		h.logger.Info("Reading OS disk size from QCOW2 file...")
 		exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
@@ -535,12 +582,8 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 			h.logger.Infof("Boot volume will be created with minimum size of %d GB", common.OCIMinVolumeSizeGB)
 		}
 	}
-	namespace, objectName, err := h.getImageImportDetails(ctx)
-	if err != nil {
-		return err
-	}
 	tfGen := template.NewOCIGenerator(
-		h.config, h.logger, namespace, objectName,
+		h.config, h.logger, h.importedImageID,
 		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
 		h.templateOutputDir,
@@ -548,14 +591,30 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 	return tfGen.GenerateTemplate()
 }
 
-func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
-	h.logger.Step(10, "Deploying the template")
-	namespace, objectName, err := h.getImageImportDetails(ctx)
-	if err != nil {
-		return err
+func (h *AzureToOCIHandler) waitForImageImportCompletion(ctx context.Context) error {
+	if h.importedImageID == "" {
+		h.logger.Info("No image import was started, skipping wait")
+		return nil
 	}
+
+	h.logger.Info("Checking OS image import status before deployment...")
+	if err := h.ociProvider.WaitForImageState(ctx, h.importedImageID, core.ImageLifecycleStateAvailable); err != nil {
+		return fmt.Errorf("image import did not complete successfully: %w", err)
+	}
+
+	h.logger.Success("OS image import completed successfully")
+	return nil
+}
+
+func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
+	h.logger.Step(11, "Deploying the template")
+	
+	if err := h.waitForImageImportCompletion(ctx); err != nil {
+		return fmt.Errorf("failed waiting for image import: %w", err)
+	}
+	
 	tfGen := template.NewOCIGenerator(
-		h.config, h.logger, namespace, objectName,
+		h.config, h.logger, h.importedImageID,
 		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
 		h.templateOutputDir,
@@ -564,22 +623,18 @@ func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 }
 
 func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
-	h.logger.Step(11, "Verifying Workflow")
+	h.logger.Step(12, "Verifying Workflow")
 	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
 	if !h.config.SkipExport {
 		if vhdFile, err := common.FindDiskFile(exportDir, ".vhd"); err == nil {
 			h.logger.Successf("✓ VHD file exists: %s", filepath.Base(vhdFile))
 		}
-	}
-	if !h.config.SkipConvert {
 		if qcow2File, err := common.FindDiskFile(exportDir, ".qcow2"); err == nil {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
 	}
-	if !h.config.SkipTemplate {
-		if _, err := os.Stat(h.templateOutputDir); err == nil {
-			h.logger.Successf("✓ Template files exist in: %s", h.templateOutputDir)
-		}
+	if _, err := os.Stat(h.templateOutputDir); err == nil {
+		h.logger.Successf("✓ Template files exist in: %s", h.templateOutputDir)
 	}
 	h.logger.Success("Workflow verification complete")
 	h.logger.Info("=========================================")

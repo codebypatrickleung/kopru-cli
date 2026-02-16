@@ -34,7 +34,7 @@ func TestBootVolumeSizeCalculation(t *testing.T) {
 				OCIImageName:      "test-image",
 			}
 			log := logger.New(false)
-			gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, tt.azureDiskSizeGB, 0, 0, "x86_64", tmpDir)
+			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, tt.azureDiskSizeGB, 0, 0, "x86_64", tmpDir)
 			if err := gen.GenerateTemplate(); err != nil {
 				t.Fatalf("GenerateTemplate failed: %v", err)
 			}
@@ -82,7 +82,7 @@ func TestUEFICapabilitySchemaGeneration(t *testing.T) {
 				OCIImageEnableUEFI: tt.uefiEnabled,
 			}
 			log := logger.New(false)
-			gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, 0, 0, "x86_64", tmpDir)
+			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 0, 0, "x86_64", tmpDir)
 			if err := gen.GenerateTemplate(); err != nil {
 				t.Fatalf("GenerateTemplate failed: %v", err)
 			}
@@ -166,7 +166,7 @@ func TestCPUAndMemoryConfiguration(t *testing.T) {
 				OCIImageName:      "test-image",
 			}
 			log := logger.New(false)
-			gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, tt.vmCPUs, tt.vmMemoryGB, tt.vmArchitecture, tmpDir)
+			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, tt.vmCPUs, tt.vmMemoryGB, tt.vmArchitecture, tmpDir)
 			if err := gen.GenerateTemplate(); err != nil {
 				t.Fatalf("GenerateTemplate failed: %v", err)
 			}
@@ -238,7 +238,7 @@ func TestArchitectureTagging(t *testing.T) {
 				OCIImageName:      "test-image",
 			}
 			log := logger.New(false)
-			gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, 2, 8, tt.vmArchitecture, tmpDir)
+			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 2, 8, tt.vmArchitecture, tmpDir)
 			if err := gen.GenerateTemplate(); err != nil {
 				t.Fatalf("GenerateTemplate failed: %v", err)
 			}
@@ -282,7 +282,7 @@ func TestARM64ShapeManagementGeneration(t *testing.T) {
 				OCIImageEnableUEFI: tt.uefiEnabled,
 			}
 			log := logger.New(false)
-			gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, 4, 16, tt.vmArchitecture, tmpDir)
+			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 4, 16, tt.vmArchitecture, tmpDir)
 			if err := gen.GenerateTemplate(); err != nil {
 				t.Fatalf("GenerateTemplate failed: %v", err)
 			}
@@ -375,7 +375,7 @@ func TestSubnetPublicIPAssignment(t *testing.T) {
 		OCIImageName:      "test-image",
 	}
 	log := logger.New(false)
-	gen := NewOCIGenerator(cfg, log, "test-namespace", "test-object.qcow2", nil, nil, 50, 2, 8, "x86_64", tmpDir)
+	gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 2, 8, "x86_64", tmpDir)
 	if err := gen.GenerateTemplate(); err != nil {
 		t.Fatalf("GenerateTemplate failed: %v", err)
 	}
