@@ -447,7 +447,7 @@ func (p *Provider) WaitForImageState(ctx context.Context, imageID string, target
 
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 3*time.Hour)
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Hour)
 		defer cancel()
 	}
 
@@ -480,7 +480,7 @@ func (p *Provider) WaitForImageState(ctx context.Context, imageID string, target
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timeout/cancel waiting up to 3h for image %s: %w", imageID, ctx.Err())
+			return fmt.Errorf("timeout/cancel waiting up to 5h for image %s: %w", imageID, ctx.Err())
 		case <-ticker.C:
 		}
 	}
