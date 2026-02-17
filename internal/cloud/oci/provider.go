@@ -447,12 +447,17 @@ func (p *Provider) WaitForImageState(ctx context.Context, imageID string, target
 
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Hour)
+		ctx, cancel = context.WithTimeout(ctx, defaultTimeout)
 		defer cancel()
 	}
 
-	const interval = 1 * time.Minute
-	ticker := time.NewTicker(interval)
+	const (
+		defaultTimeout  = 5 * time.Hour
+		defaultInterval = 1 * time.Minute
+		logInterval     = 5
+	)
+	
+	ticker := time.NewTicker(defaultInterval)
 	defer ticker.Stop()
 
 	attempt := 0
@@ -474,13 +479,13 @@ func (p *Provider) WaitForImageState(ctx context.Context, imageID string, target
 			return fmt.Errorf("image import failed or resource was removed (final state: %s)", state)
 		}
 
-		if attempt == 1 || attempt%6 == 0 {
+		if attempt == 1 || attempt%logInterval == 0 {
 			p.logger.Infof("Image import in progress (state: %s)... attempt %d", state, attempt)
 		}
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timeout/cancel waiting up to 5h for image %s: %w", imageID, ctx.Err())
+			return fmt.Errorf("timeout/cancel waiting up to %s for image %s: %w", defaultTimeout, imageID, ctx.Err())
 		case <-ticker.C:
 		}
 	}
