@@ -78,7 +78,7 @@ install_go(){
 }
 
 install_opentofu() {
-    if command -v tofu &>/dev/null; then
+    if ! command -v tofu &>/dev/null; then
         echo "Installing opentofu..."
         sudo dnf install -y opentofu --enablerepo=ol9_developer_EPEL 
     else
