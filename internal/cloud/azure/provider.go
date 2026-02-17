@@ -30,7 +30,7 @@ func NewProvider(subscriptionID string, log *logger.Logger) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
-	fmt.Println("Successfully created DefaultAzureCredential")
+	log.Debug("Successfully created DefaultAzureCredential")
 	return &Provider{
 		subscriptionID: subscriptionID,
 		credential:     cred,
