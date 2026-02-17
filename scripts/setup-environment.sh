@@ -46,9 +46,7 @@ verify_core_utilities() {
 install_qemu_tools() {
     if ! command -v qemu-img &>/dev/null; then
         echo "Installing QEMU tools..."
-        if command -v dnf &>/dev/null; then
-            sudo dnf install -y qemu-img qemu-kvm-tools 2>/dev/null || sudo dnf install -y qemu-kvm
-        fi
+        sudo dnf install -y qemu-img qemu-kvm-tools 2>/dev/null || sudo dnf install -y qemu-kvm
     else
         echo "✓ QEMU tools already installed."
     fi
@@ -64,9 +62,7 @@ install_qemu_tools() {
 install_guestfs_tools() {
     if ! command -v virt-customize &>/dev/null; then
         echo "Installing guestfs-tools tools..."
-        if command -v dnf &>/dev/null; then
-            sudo dnf install -y guestfs-tools
-        fi
+        sudo dnf install -y guestfs-tools
     else
         echo "✓ guestfs-tools already installed."
     fi
@@ -75,20 +71,16 @@ install_guestfs_tools() {
 install_go(){
     if ! command -v go &>/dev/null; then
         echo "Installing latest Go..."
-        if command -v dnf &>/dev/null; then
-            sudo dnf install -y golang
-        fi
+        sudo dnf install -y golang
     else
         echo "✓ Go already installed."
     fi
 }
 
 install_opentofu() {
-    if ! command -v tofu &>/dev/null; then
-        echo "Installing OpenTofu..."
-        if command -v tofu &>/dev/null; then
-            sudo dnf install -y opentofu --enablerepo=ol9_developer_EPEL
-         fi   
+    if command -v tofu &>/dev/null; then
+        echo "Installing opentofu..."
+        sudo dnf install -y opentofu --enablerepo=ol9_developer_EPEL 
     else
         echo "✓ OpenTofu already installed."
     fi
@@ -97,10 +89,8 @@ install_opentofu() {
 install_oci_cli() {
     if ! command -v oci &>/dev/null; then
         echo "Installing OCI CLI..."
-        if command -v dnf &>/dev/null; then
-            dnf -y install oraclelinux-developer-release-el9
-            dnf -y install python39-oci-cli
-        fi
+        dnf -y install oraclelinux-developer-release-el9
+        dnf -y install python39-oci-cli
     else
         echo "✓ OCI CLI already installed."
     fi
