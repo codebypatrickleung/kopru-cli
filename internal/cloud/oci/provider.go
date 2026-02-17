@@ -440,6 +440,11 @@ func (p *Provider) ImportImage(ctx context.Context, compartmentID, namespace, bu
 
 // WaitForImageState waits for an image to reach the specified state.
 func (p *Provider) WaitForImageState(ctx context.Context, imageID string, targetState core.ImageLifecycleStateEnum) error {
+	const (
+		defaultTimeout  = 5 * time.Hour
+		defaultInterval = 1 * time.Minute
+		logInterval     = 5
+	)
 	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
 	if err != nil {
 		return fmt.Errorf("failed to create compute client: %w", err)
@@ -451,12 +456,6 @@ func (p *Provider) WaitForImageState(ctx context.Context, imageID string, target
 		defer cancel()
 	}
 
-	const (
-		defaultTimeout  = 5 * time.Hour
-		defaultInterval = 1 * time.Minute
-		logInterval     = 5
-	)
-	
 	ticker := time.NewTicker(defaultInterval)
 	defer ticker.Stop()
 
