@@ -46,11 +46,11 @@ sudo dracut -v -f --add-drivers "virtio virtio_pci virtio_scsi" "$INITRAMFS_PATH
 
 #### Windows
 
-Install Virtio drivers as described [here](https://docs.oracle.com/en/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
+Install Virtio drivers as described [here](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
 
 ### 2. Launch an Oracle Linux 9 Instance in OCI
 
-See [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/uk/security/cloud-security/cloud-guard/).
+See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). It is highly recommended to use Oracle Cloud Infrastructure (OCI) [Block Volume Auto-tuning](https://docs.oracle.com/iaas/Content/Block/Tasks/perf-based-existing.htm).
 
 ### 3. Clone the Repository
 
@@ -83,7 +83,7 @@ Kopru requires authentication for both Azure and OCI.
 
 - Uses a Service Principal.
 - Requires `Disk Snapshot Contributor` and `Reader` roles on the VM's resource group.
-- See [Azure Authentication docs](https://learn.microsoft.com/en-us/azure/developer/go/sdk/authentication/authentication-on-premises-apps).
+- See [Azure Authentication docs](https://learn.microsoft.com/azure/developer/go/sdk/authentication/authentication-on-premises-apps).
 
 Set credentials:
 
@@ -98,7 +98,7 @@ export AZURE_SUBSCRIPTION_ID="your-subscription-id"
 
 - Uses API key-based authentication.
 - Ensure proper IAM policies for the target compartment.
-- See [OCI Authentication docs](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#configfile).
+- See [OCI Authentication docs](https://docs.oracle.com/iaas/Content/API/SDKDocs/cliinstall.htm#configfile).
 
 Set up config:
 
