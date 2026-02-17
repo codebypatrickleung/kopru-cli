@@ -50,7 +50,7 @@ Install Virtio drivers as described [here](https://docs.oracle.com/operating-sys
 
 ### 2. Launch an Oracle Linux 9 Instance in OCI
 
-See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). It is highly recommended to use Oracle Cloud Infrastructure (OCI) [Block Volume Auto-tuning](https://docs.oracle.com/iaas/Content/Block/Tasks/perf-based-existing.htm).
+See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). It is highly recommended to use a dedicated block storage with [Block Volume Auto-tuning](https://docs.oracle.com/iaas/Content/Block/Tasks/perf-based-existing.htm) enabled.
 
 ### 3. Clone the Repository
 
