@@ -46,7 +46,7 @@ verify_core_utilities() {
 install_qemu_tools() {
     if ! command -v qemu-img &>/dev/null; then
         echo "Installing QEMU tools..."
-        sudo dnf install -y qemu-img qemu-kvm-tools 2>/dev/null || sudo dnf install -y qemu-kvm
+        sudo dnf install -y qemu-kvm
     else
         echo "✓ QEMU tools already installed."
     fi
@@ -61,7 +61,7 @@ install_qemu_tools() {
 
 install_guestfs_tools() {
     if ! command -v virt-customize &>/dev/null; then
-        echo "Installing guestfs-tools tools..."
+        echo "Installing guestfs-tools..."
         sudo dnf install -y guestfs-tools
     else
         echo "✓ guestfs-tools already installed."
@@ -80,7 +80,10 @@ install_go(){
 install_opentofu() {
     if ! command -v tofu &>/dev/null; then
         echo "Installing opentofu..."
-        sudo dnf install -y opentofu --enablerepo=ol9_developer_EPEL 
+        if ! dnf repolist | grep ol9_developer_EPEL; then
+            sudo dnf config-manager --set-enabled ol9_developer_EPEL
+        fi
+        sudo dnf install -y opentofu --enablerepo=ol9_developer_EPEL
     else
         echo "✓ OpenTofu already installed."
     fi
@@ -89,20 +92,20 @@ install_opentofu() {
 install_oci_cli() {
     if ! command -v oci &>/dev/null; then
         echo "Installing OCI CLI..."
-        dnf -y install oraclelinux-developer-release-el9
-        dnf -y install python39-oci-cli
+        sudo dnf -y install oraclelinux-developer-release-el9
+        sudo dnf -y install python39-oci-cli
     else
         echo "✓ OCI CLI already installed."
     fi
-}   
+}
 
 main() {
     check_oracle_linux_version
     verify_core_utilities
     install_guestfs_tools
     install_qemu_tools
-    install_opentofu
     install_go
+    install_opentofu
     install_oci_cli
     echo "Kopru environment setup complete."
 }
