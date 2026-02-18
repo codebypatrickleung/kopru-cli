@@ -218,12 +218,24 @@ func (h *LinuxImageToOCIHandler) downloadOSImage(ctx context.Context) error {
 	h.logger.Infof("Downloading from: %s", h.osImageURL)
 	h.logger.Info("This may take a few minutes...")
 	
-	resp, err := http.Get(h.osImageURL)
+	req, err := http.NewRequest("GET", h.osImageURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return nil 
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download OS image: %w", err)
 	}
 	defer resp.Body.Close()
-	
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download OS image: HTTP %d", resp.StatusCode)
 	}
