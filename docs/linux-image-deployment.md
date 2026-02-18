@@ -8,11 +8,11 @@ Kopru supports direct deployment of Linux cloud images to OCI. The following con
 
 - **Source**: Linux cloud images from official distribution repositories
 - **Image Format**: QCOW2
-- **Operating Systems**:  
+- **Operating Systems**: If your OS is not listed, you might need to update the [OS configuration script](./os-configurations.md).
   - [Debian](https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2)  
   - [Fedora](https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2)  
   - [CentOS Stream](https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2)  
-  If your OS is not listed, update the [OS configuration script](./os-configurations.md).
+
 - **Execution Environment**: Oracle Linux 9 on OCI
 - **Target Platform**: Oracle Cloud Infrastructure
 
