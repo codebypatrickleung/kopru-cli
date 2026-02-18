@@ -199,18 +199,27 @@ func (p *Provider) GetLocalInstanceID(ctx context.Context) (string, error) {
 	return instanceID, nil
 }
 
-// CreateBlockVolume creates a new block volume.
+// CreateBlockVolume creates a new block volume with storage autoscaling enabled.
 func (p *Provider) CreateBlockVolume(ctx context.Context, compartmentID, availabilityDomain, displayName string, sizeInGBs int64) (string, error) {
 	client, err := core.NewBlockstorageClientWithConfigurationProvider(p.configProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to create block storage client: %w", err)
 	}
+	
+	maxVpusPerGB := int64(120)
+	autotunePolicies := []core.AutotunePolicy{
+		core.PerformanceBasedAutotunePolicy{
+			MaxVpusPerGB: &maxVpusPerGB,
+		},
+	}
+	
 	req := core.CreateVolumeRequest{
 		CreateVolumeDetails: core.CreateVolumeDetails{
 			CompartmentId:      &compartmentID,
 			AvailabilityDomain: &availabilityDomain,
 			DisplayName:        &displayName,
 			SizeInGBs:          &sizeInGBs,
+			AutotunePolicies:   autotunePolicies,
 		},
 	}
 	resp, err := client.CreateVolume(ctx, req)
@@ -223,6 +232,7 @@ func (p *Provider) CreateBlockVolume(ctx context.Context, compartmentID, availab
 	if err != nil {
 		return "", fmt.Errorf("volume did not become available: %w", err)
 	}
+	p.logger.Successf("Volume created successfully with autoscaling enabled: %s", volumeID)
 	return volumeID, nil
 }
 
@@ -392,4 +402,108 @@ func (p *Provider) DeleteVolume(ctx context.Context, volumeID string) error {
 		p.logger.Warning(fmt.Sprintf("Could not verify volume deletion: %v", err))
 	}
 	return nil
+}
+
+// ImportImage imports a custom image from Object Storage.
+func (p *Provider) ImportImage(ctx context.Context, compartmentID, namespace, bucketName, objectName, imageName, operatingSystem, operatingSystemVersion string) (string, error) {
+	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
+	if err != nil {
+		return "", fmt.Errorf("failed to create compute client: %w", err)
+	}
+
+	launchMode := core.CreateImageDetailsLaunchModeParavirtualized
+
+	req := core.CreateImageRequest{
+		CreateImageDetails: core.CreateImageDetails{
+			CompartmentId: &compartmentID,
+			DisplayName:   &imageName,
+			LaunchMode:    launchMode,
+			ImageSourceDetails: core.ImageSourceViaObjectStorageTupleDetails{
+				NamespaceName:          &namespace,
+				BucketName:             &bucketName,
+				ObjectName:             &objectName,
+				OperatingSystem:        &operatingSystem,
+				OperatingSystemVersion: &operatingSystemVersion,
+			},
+		},
+	}
+
+	resp, err := client.CreateImage(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("failed to create image: %w", err)
+	}
+
+	imageID := *resp.Id
+	p.logger.Infof("Image import started with ID: %s", imageID)
+	return imageID, nil
+}
+
+// WaitForImageState waits for an image to reach the specified state.
+func (p *Provider) WaitForImageState(ctx context.Context, imageID string, targetState core.ImageLifecycleStateEnum) error {
+	const (
+		defaultTimeout  = 5 * time.Hour
+		defaultInterval = 1 * time.Minute
+		logInterval     = 5
+	)
+	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
+	if err != nil {
+		return fmt.Errorf("failed to create compute client: %w", err)
+	}
+
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultTimeout)
+		defer cancel()
+	}
+
+	ticker := time.NewTicker(defaultInterval)
+	defer ticker.Stop()
+
+	attempt := 0
+	for {
+		attempt++
+
+		resp, err := client.GetImage(ctx, core.GetImageRequest{ImageId: &imageID})
+		if err != nil {
+			return fmt.Errorf("failed to get image state: %w", err)
+		}
+
+		state := resp.LifecycleState
+		if state == targetState {
+			p.logger.Successf("Image reached target state: %s", targetState)
+			return nil
+		}
+
+		if state == core.ImageLifecycleStateDisabled || state == core.ImageLifecycleStateDeleted {
+			return fmt.Errorf("image import failed or resource was removed (final state: %s)", state)
+		}
+
+		if attempt == 1 || attempt%logInterval == 0 {
+			p.logger.Infof("Image import in progress (state: %s)... attempt %d", state, attempt)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout/cancel waiting up to %s for image %s: %w", defaultTimeout, imageID, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+// GetImage retrieves the details of an image.
+func (p *Provider) GetImage(ctx context.Context, imageID string) (*core.Image, error) {
+	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create compute client: %w", err)
+	}
+
+	req := core.GetImageRequest{
+		ImageId: &imageID,
+	}
+	resp, err := client.GetImage(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image: %w", err)
+	}
+
+	return &resp.Image, nil
 }

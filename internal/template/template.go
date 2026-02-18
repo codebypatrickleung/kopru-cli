@@ -37,8 +37,7 @@ const defaultImageCapabilitySchemaVersion = "1"
 type OCIGenerator struct {
 	config                *config.Config
 	logger                *logger.Logger
-	namespace             string
-	objectName            string
+	importedImageID       string
 	dataDiskSnapshotIDs   []string
 	dataDiskSnapshotNames []string
 	bootVolumeSizeGB      int64
@@ -49,12 +48,11 @@ type OCIGenerator struct {
 }
 
 // NewOCIGenerator creates a new OCI template generator.
-func NewOCIGenerator(cfg *config.Config, log *logger.Logger, namespace, objectName string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string, templateOutputDir string) *OCIGenerator {
+func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string, templateOutputDir string) *OCIGenerator {
 	return &OCIGenerator{
 		config:                cfg,
 		logger:                log,
-		namespace:             namespace,
-		objectName:            objectName,
+		importedImageID:       importedImageID,
 		dataDiskSnapshotIDs:   dataDiskSnapshotIDs,
 		dataDiskSnapshotNames: dataDiskSnapshotNames,
 		bootVolumeSizeGB:      bootVolumeSizeGB,
@@ -221,35 +219,9 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "namespace" {
-  description = "The Object Storage namespace"
+variable "imported_image_id" {
+  description = "The OCID of the imported custom image"
   type        = string
-}
-
-variable "bucket_name" {
-  description = "The Object Storage bucket name containing the image"
-  type        = string
-}
-
-variable "object_name" {
-  description = "The name of the image object in Object Storage"
-  type        = string
-}
-
-variable "image_name" {
-  description = "The display name for the custom image"
-  type        = string
-}
-
-variable "operating_system" {
-  description = "The operating system of the image"
-  type        = string
-}
-
-variable "operating_system_version" {
-  description = "The operating system version of the image"
-  type        = string
-  default     = ""
 }
 
 variable "instance_ad_number" {
@@ -351,29 +323,6 @@ locals {
 
 `)
 
-	// Add image import resource
-	imageImportSection := `# --------------------------------------------------------------------------------------------
-# Custom Image Import from Object Storage
-# --------------------------------------------------------------------------------------------
-
-resource "oci_core_image" "imported_image" {
-  compartment_id = var.compartment_id
-  display_name   = var.image_name
-  launch_mode    = "PARAVIRTUALIZED"
-
-  image_source_details {
-    source_type = "objectStorageTuple"
-    namespace_name   = var.namespace
-    bucket_name      = var.bucket_name
-    object_name      = var.object_name
-    operating_system = var.operating_system
-    operating_system_version = var.operating_system_version
-  }
-}
-
-`
-	b.WriteString(imageImportSection)
-
 	// Add image capability schema for UEFI if enabled or if ARM64 (ARM64 requires UEFI)
 	needsUEFI := g.config.OCIImageEnableUEFI || g.vmArchitecture == "ARM64"
 	if needsUEFI {
@@ -397,7 +346,7 @@ locals {
 resource "oci_core_compute_image_capability_schema" "worker_image_capability_schema" {
   compartment_id                                      = var.compartment_id
   compute_global_image_capability_schema_version_name = local.schema_version_name
-  image_id                                            = oci_core_image.imported_image.id
+  image_id                                            = var.imported_image_id
   schema_data                                         = local.image_schema_data
 }
 
@@ -413,7 +362,7 @@ resource "oci_core_compute_image_capability_schema" "worker_image_capability_sch
 
 resource "oci_core_shape_management" "arm64_shape_support" {
   compartment_id = var.compartment_id
-  image_id   = oci_core_image.imported_image.id
+  image_id   = var.imported_image_id
   shape_name = "%s"
 }
 
@@ -437,7 +386,7 @@ resource "oci_core_shape_management" "arm64_shape_support" {
 
   source_details {
 	source_type = "image"
-	source_id   = oci_core_image.imported_image.id
+	source_id   = var.imported_image_id
 	boot_volume_size_in_gbs = var.boot_volume_size_in_gbs
   }
 
@@ -487,16 +436,6 @@ func (g *OCIGenerator) generateOutputsTF() error {
 	content := `# --------------------------------------------------------------------------------------------
 # Output Definitions
 # --------------------------------------------------------------------------------------------
-
-output "imported_image_id" {
-  description = "The OCID of the imported custom image"
-  value       = oci_core_image.imported_image.id
-}
-
-output "imported_image_state" {
-  description = "The lifecycle state of the imported image"
-  value       = oci_core_image.imported_image.state
-}
 
 output "instance_id" {
   description = "The OCID of the created instance"
@@ -587,12 +526,7 @@ func (g *OCIGenerator) generateTFVars() error {
 
 compartment_id      = "%s"
 subnet_id           = "%s"
-namespace           = "%s"
-bucket_name         = "%s"
-object_name         = "%s"
-image_name          = "%s"
-operating_system    = "%s"
-operating_system_version = "%s"
+imported_image_id   = "%s"
 instance_ad_number  = "%s"
 
 instance_name      = "%s"
@@ -617,12 +551,7 @@ freeform_tags = {
 `,
 		g.config.OCICompartmentID,
 		g.config.OCISubnetID,
-		g.namespace,
-		g.config.OCIBucketName,
-		g.objectName,
-		g.config.OCIImageName,
-		g.config.OCIImageOS,
-		g.config.OCIImageOSVersion,
+		g.importedImageID,
 		ad,
 		g.config.OCIInstanceName,
 		ociShape,

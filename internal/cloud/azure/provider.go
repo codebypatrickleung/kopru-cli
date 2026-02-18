@@ -30,7 +30,7 @@ func NewProvider(subscriptionID string, log *logger.Logger) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
-	fmt.Println("Successfully created DefaultAzureCredential")
+	log.Debug("Successfully created DefaultAzureCredential")
 	return &Provider{
 		subscriptionID: subscriptionID,
 		credential:     cred,
@@ -233,7 +233,7 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	}()
 
 	p.logger.Infof("Generating SAS URL for snapshot: %s", snapshotName)
-	sasURL, err := p.GrantSnapshotAccess(ctx, resourceGroup, snapshotName, 86400)
+	sasURL, err := p.GrantSnapshotAccess(ctx, resourceGroup, snapshotName, 200000)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS URL: %w", err)
 	}

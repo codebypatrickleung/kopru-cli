@@ -115,9 +115,9 @@ func CopyDataWithDD(source, destination string) error {
 	cmd := exec.Command("dd",
 		"if="+source,
 		"of="+destination,
-		"bs=4M",
+		"bs=8M",
 		"status=progress",
-		"conv=fsync")
+		"conv=sparse")
 	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open /dev/null: %w", err)

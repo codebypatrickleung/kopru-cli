@@ -15,7 +15,7 @@ import (
 
 var (
 	cfgFile string
-	version = "0.2.0"
+	version = "0.2.1"
 )
 
 func main() {
@@ -67,16 +67,8 @@ func init() {
 	boolFlags := []struct {
 		name, usage string
 	}{
-		{"skip-prereq", "Skip prerequisite checks"},
 		{"skip-os-export", "Skip OS disk export"},
-		{"skip-os-convert", "Skip QCOW2 conversion"},
-		{"skip-os-configure", "Skip image configuration"},
-		{"skip-os-upload", "Skip image upload to OCI"},
-		{"skip-dd-export", "Skip data disk export"},
-		{"skip-dd-import", "Skip data disk import"},
-		{"skip-template", "Skip template generation"},
 		{"skip-template-deploy", "Skip template deployment"},
-		{"skip-verify", "Skip workflow verification"},
 		{"debug", "Enable debug logging"},
 	}
 	for _, f := range boolFlags {
@@ -98,16 +90,8 @@ func init() {
 		"OCI_INSTANCE_NAME":       "oci-instance-name",
 		"OCI_AVAILABILITY_DOMAIN": "oci-availability-domain",
 		"OS_IMAGE_URL":            "os-image-url",
-		"SKIP_PREREQ":             "skip-prereq",
 		"SKIP_OS_EXPORT":          "skip-os-export",
-		"SKIP_OS_CONVERT":         "skip-os-convert",
-		"SKIP_OS_CONFIGURE":       "skip-os-configure",
-		"SKIP_OS_UPLOAD":          "skip-os-upload",
-		"SKIP_DD_EXPORT":          "skip-dd-export",
-		"SKIP_DD_IMPORT":          "skip-dd-import",
-		"SKIP_TEMPLATE":           "skip-template",
 		"SKIP_TEMPLATE_DEPLOY":    "skip-template-deploy",
-		"SKIP_VERIFY":             "skip-verify",
 		"TEMPLATE_OUTPUT_DIR":     "template-output-dir",
 		"SSH_KEY_FILE":            "ssh-key-file",
 		"SOURCE_PLATFORM":         "source-platform",
