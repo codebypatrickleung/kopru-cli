@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/codebypatrickleung/kopru-cli/internal/cloud/azure"
 	"github.com/codebypatrickleung/kopru-cli/internal/cloud/oci"
@@ -139,6 +140,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image UEFI Enabled: %t", h.config.OCIImageEnableUEFI)
 	h.logger.Infof("Template Output Dir: %s", h.templateOutputDir)
 	h.logger.Infof("SSH Key File Path: %s", h.config.SSHKeyFilePath)
+	h.logger.Infof("Data Disk Parallelism: %d", h.config.DataDiskParallelism)
 	h.logger.Step(2, "Running Prerequisite Checks")
 	for _, tool := range []string{"qemu-img", "virt-customize"} {
 		if err := common.CheckCommand(tool); err != nil {
@@ -377,15 +379,26 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 		return nil
 	}
 	h.logger.Infof("Found %d data disk(s) to export", len(diskNames))
+	h.logger.Info("Exporting all data disks in parallel...")
+	sem := make(chan struct{}, h.config.DataDiskParallelism)
+	var wg sync.WaitGroup
 	for _, diskName := range diskNames {
-		h.logger.Infof("Exporting data disk: %s", diskName)
-		_, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, exportDir)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to export data disk %s: %v", diskName, err))
-			continue
-		}
-		h.logger.Successf("✓ Exported: %s", diskName)
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			h.logger.Infof("Exporting data disk: %s", diskName)
+			if _, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, exportDir); err != nil {
+				h.logger.Warning(fmt.Sprintf("Failed to export data disk %s: %v", diskName, err))
+				return
+			}
+			h.logger.Successf("✓ Exported: %s", diskName)
+		}()
 	}
+	wg.Wait()
 	h.logger.Success("Data disks exported")
 	return nil
 }
@@ -419,123 +432,196 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Infof("Local instance: %s", localInstanceID)
 	h.logger.Infof("Availability domain: %s", localAvailabilityDomain)
 
-	var (
-		createdVolumes []string
-		snapshotIDs    []string
-		snapshotNames  []string
-		failedCount    int
-	)
-
-	for _, vhdFile := range vhdFiles {
-		h.logger.Info("=========================================")
-		h.logger.Infof("Processing: %s", filepath.Base(vhdFile))
-		h.logger.Info("=========================================")
-
-		baseDiskName := strings.TrimSuffix(filepath.Base(vhdFile), ".vhd")
-		rawFile := strings.TrimSuffix(vhdFile, ".vhd") + ".raw"
-		h.logger.Infof("Converting VHD to RAW format: %s", filepath.Base(rawFile))
-		if err := common.ConvertVHDToRAW(vhdFile, rawFile); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to convert VHD to RAW: %v", err))
-			failedCount++
-			continue
+	n := len(vhdFiles)
+	type diskInfo struct {
+		vhdFile      string
+		rawFile      string
+		baseDiskName string
+	}
+	disks := make([]diskInfo, n)
+	for i, vhdFile := range vhdFiles {
+		disks[i] = diskInfo{
+			vhdFile:      vhdFile,
+			rawFile:      strings.TrimSuffix(vhdFile, ".vhd") + ".raw",
+			baseDiskName: strings.TrimSuffix(filepath.Base(vhdFile), ".vhd"),
 		}
-		h.logger.Success("VHD converted to RAW format")
-
-		diskSizeGB, err := common.GetFileSizeGB(rawFile)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to get disk size: %v", err))
-			failedCount++
-			continue
-		}
-
-		h.logger.Infof("Creating OCI volume of size %d GB...", diskSizeGB)
-		volumeName := fmt.Sprintf("bv-%s", baseDiskName)
-		h.logger.Infof("Volume name: %s", volumeName)
-
-		volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to create OCI volume: %v", err))
-			failedCount++
-			continue
-		}
-		h.logger.Successf("Created volume: %s", volumeID)
-
-		createdVolumes = append(createdVolumes, volumeID)
-
-		beforeDevices, err := common.ListBlockDevices()
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to list block devices: %v", err))
-			failedCount++
-			continue
-		}
-
-		h.logger.Info("Attaching volume to local instance...")
-		attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to attach volume: %v", err))
-			failedCount++
-			continue
-		}
-		h.logger.Infof("Volume attached (attachment: %s)", attachmentID)
-
-		attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Could not detect attached device: %v", err))
-			if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
-			}
-			failedCount++
-			continue
-		}
-		h.logger.Infof("Attached device: %s", attachedDevice)
-
-		h.logger.Infof("Copying data from RAW file to %s...", attachedDevice)
-		h.logger.Info("  This may take a while depending on disk size...")
-		if err := common.CopyDataWithDD(rawFile, attachedDevice); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to copy data: %v", err))
-			if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
-			}
-			failedCount++
-			continue
-		}
-		h.logger.Success("Data copy completed")
-
-		h.logger.Info("Detaching volume...")
-		if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to detach volume: %v", err))
-		} else {
-			h.logger.Info("Volume detached")
-		}
-
-		snapshotName := fmt.Sprintf("ss-%s", baseDiskName)
-		h.logger.Infof("Creating snapshot: %s...", snapshotName)
-		snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeID, snapshotName)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to create snapshot: %v", err))
-			failedCount++
-			continue
-		}
-		h.logger.Successf("Created snapshot: %s", snapshotID)
-
-		snapshotIDs = append(snapshotIDs, snapshotID)
-		snapshotNames = append(snapshotNames, snapshotName)
-
-		h.logger.Successf("Processed: %s", filepath.Base(vhdFile))
 	}
 
-	h.dataDiskSnapshotIDs = snapshotIDs
-	h.dataDiskSnapshotNames = snapshotNames
+	// Phase 1: Convert all VHDs to RAW format in parallel
+	h.logger.Info("Phase 1: Converting VHD files to RAW format in parallel...")
+	convErrors := make([]error, n)
+	sem := make(chan struct{}, h.config.DataDiskParallelism)
+	var wg sync.WaitGroup
+	for i, disk := range disks {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			h.logger.Infof("[%s] Converting VHD to RAW format...", disk.baseDiskName)
+			if err := common.ConvertVHDToRAW(disk.vhdFile, disk.rawFile); err != nil {
+				convErrors[i] = err
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to convert VHD to RAW: %v", disk.baseDiskName, err))
+			} else {
+				h.logger.Successf("[%s] VHD converted to RAW format", disk.baseDiskName)
+			}
+		}()
+	}
+	wg.Wait()
 
+	// Phase 2: Copy data to OCI block volumes in parallel.
+	h.logger.Info("Phase 2: Copying data to OCI block volumes in parallel...")
+	volumeIDs := make([]string, n)
+	ddErrors := make([]error, n)
+	var attachMu sync.Mutex
+	for i, disk := range disks {
+		if convErrors[i] != nil {
+			ddErrors[i] = fmt.Errorf("skipping due to conversion failure: %w", convErrors[i])
+			continue
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			diskSizeGB, err := common.GetFileSizeGB(disk.rawFile)
+			if err != nil {
+				ddErrors[i] = fmt.Errorf("failed to get disk size: %w", err)
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to get disk size: %v", disk.baseDiskName, err))
+				return
+			}
+			volumeName := fmt.Sprintf("bv-%s", disk.baseDiskName)
+			h.logger.Infof("[%s] Creating OCI volume '%s' of size %d GB...", disk.baseDiskName, volumeName, diskSizeGB)
+			volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
+			if err != nil {
+				ddErrors[i] = fmt.Errorf("failed to create OCI volume: %w", err)
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to create OCI volume: %v", disk.baseDiskName, err))
+				return
+			}
+			h.logger.Successf("[%s] Created volume: %s", disk.baseDiskName, volumeID)
+			volumeIDs[i] = volumeID
+
+			// Serialize attach+detect to reliably identify the newly attached device
+			attachMu.Lock()
+			beforeDevices, err := common.ListBlockDevices()
+			if err != nil {
+				attachMu.Unlock()
+				ddErrors[i] = fmt.Errorf("failed to list block devices: %w", err)
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to list block devices: %v", disk.baseDiskName, err))
+				return
+			}
+			h.logger.Infof("[%s] Attaching volume to local instance...", disk.baseDiskName)
+			attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
+			if err != nil {
+				attachMu.Unlock()
+				ddErrors[i] = fmt.Errorf("failed to attach volume: %w", err)
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to attach volume: %v", disk.baseDiskName, err))
+				return
+			}
+			h.logger.Infof("[%s] Volume attached (attachment: %s)", disk.baseDiskName, attachmentID)
+			attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
+			attachMu.Unlock()
+			if err != nil {
+				h.logger.Warning(fmt.Sprintf("[%s] Could not detect attached device: %v", disk.baseDiskName, err))
+				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
+					h.logger.Warning(fmt.Sprintf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr))
+				}
+				ddErrors[i] = fmt.Errorf("failed to detect attached device: %w", err)
+				return
+			}
+			h.logger.Infof("[%s] Attached device: %s", disk.baseDiskName, attachedDevice)
+
+			h.logger.Infof("[%s] Copying data from RAW file to %s (this may take a while)...", disk.baseDiskName, attachedDevice)
+			if err := common.CopyDataWithDD(disk.rawFile, attachedDevice); err != nil {
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to copy data: %v", disk.baseDiskName, err))
+				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
+					h.logger.Warning(fmt.Sprintf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr))
+				}
+				ddErrors[i] = fmt.Errorf("failed to copy data with dd: %w", err)
+				return
+			}
+			h.logger.Successf("[%s] Data copy completed", disk.baseDiskName)
+
+			h.logger.Infof("[%s] Detaching volume...", disk.baseDiskName)
+			if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to detach volume: %v", disk.baseDiskName, err))
+			} else {
+				h.logger.Infof("[%s] Volume detached", disk.baseDiskName)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Phase 3: Create snapshots in parallel
+	h.logger.Info("Phase 3: Creating snapshots in parallel...")
+	snapshotIDs := make([]string, n)
+	snapshotNames := make([]string, n)
+	snapshotErrors := make([]error, n)
+	for i, disk := range disks {
+		if ddErrors[i] != nil || volumeIDs[i] == "" {
+			continue
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			snapshotName := fmt.Sprintf("ss-%s", disk.baseDiskName)
+			h.logger.Infof("[%s] Creating snapshot: %s...", disk.baseDiskName, snapshotName)
+			snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeIDs[i], snapshotName)
+			if err != nil {
+				snapshotErrors[i] = err
+				h.logger.Warning(fmt.Sprintf("[%s] Failed to create snapshot: %v", disk.baseDiskName, err))
+				return
+			}
+			snapshotIDs[i] = snapshotID
+			snapshotNames[i] = snapshotName
+			h.logger.Successf("[%s] Created snapshot: %s", disk.baseDiskName, snapshotID)
+		}()
+	}
+	wg.Wait()
+
+	// Collect snapshot results and count failures
+	var failedCount int
+	for i := range disks {
+		if convErrors[i] != nil || ddErrors[i] != nil || snapshotErrors[i] != nil {
+			failedCount++
+		}
+		if snapshotIDs[i] != "" {
+			h.dataDiskSnapshotIDs = append(h.dataDiskSnapshotIDs, snapshotIDs[i])
+			h.dataDiskSnapshotNames = append(h.dataDiskSnapshotNames, snapshotNames[i])
+		}
+	}
+
+	// Cleanup: delete all created block volumes in parallel
 	h.logger.Info("Cleaning up temporary block volumes...")
-	for _, volumeID := range createdVolumes {
-		h.logger.Infof("Deleting volume %s...", volumeID)
-		if err := h.ociProvider.DeleteVolume(ctx, volumeID); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to delete volume %s: %v", volumeID, err))
-		} else {
-			h.logger.Success("Volume deleted")
+	for i, volumeID := range volumeIDs {
+		if volumeID == "" {
+			continue
 		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			h.logger.Infof("Deleting volume %s...", volumeID)
+			if err := h.ociProvider.DeleteVolume(ctx, volumeID); err != nil {
+				h.logger.Warning(fmt.Sprintf("Failed to delete volume %s: %v", volumeID, err))
+			} else {
+				h.logger.Successf("[%s] Volume deleted", disks[i].baseDiskName)
+			}
+		}()
 	}
+	wg.Wait()
+
 	h.logger.Info("=========================================")
 	h.logger.Success("Data disk import completed")
 	h.logger.Infof("  Snapshots created: %d", len(h.dataDiskSnapshotIDs))

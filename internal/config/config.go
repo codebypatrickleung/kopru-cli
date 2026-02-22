@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	defaultImageName     = "kopru-image"
-	defaultInstanceName  = "kopru-instance"
-	imageSuffix          = "-image"
+	defaultImageName        = "kopru-image"
+	defaultInstanceName     = "kopru-instance"
+	imageSuffix             = "-image"
+	defaultDataDiskParallelism = 2
 )
 
 // Config holds all configuration for the Kopru CLI.
@@ -36,6 +37,7 @@ type Config struct {
 	SSHKeyFilePath        string
 	SkipExport            bool
 	SkipTemplateDeploy    bool
+	DataDiskParallelism   int
 	Debug                 bool
 }
 
@@ -46,6 +48,7 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("oci_bucket_name", "kopru-bucket")
 	viper.SetDefault("oci_image_name", defaultImageName)
 	viper.SetDefault("oci_instance_name", defaultInstanceName)
+	viper.SetDefault("data_disk_parallelism", defaultDataDiskParallelism)
 
 	viper.AutomaticEnv()
 
@@ -74,6 +77,11 @@ func Load(configFile string) (*Config, error) {
 		ociImageName = defaultImageName
 	}
 
+	parallelism := viper.GetInt("data_disk_parallelism")
+	if parallelism < 1 {
+		parallelism = 1
+	}
+
 	cfg := &Config{
 		SourcePlatform:        viper.GetString("source_platform"),
 		TargetPlatform:        viper.GetString("target_platform"),
@@ -94,6 +102,7 @@ func Load(configFile string) (*Config, error) {
 		SSHKeyFilePath:        viper.GetString("ssh_key_file"),
 		SkipExport:            viper.GetBool("skip_os_export"),
 		SkipTemplateDeploy:    viper.GetBool("skip_template_deploy"),
+		DataDiskParallelism:   parallelism,
 		Debug:                 viper.GetBool("debug"),
 	}
 
