@@ -49,7 +49,14 @@ Install Virtio drivers as described [here](https://docs.oracle.com/operating-sys
 
 ### 2. Launch an Oracle Linux 9 Instance in OCI
 
-See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). It is highly recommended to use a dedicated block volume with [auto-tuning](https://docs.oracle.com/iaas/Content/Block/Tasks/perf-based-existing.htm) enabled.
+See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). 
+
+Optimising for Migration downtime:
+
+- **Performance**: Use a VM with at least 4 OCPUs and a dedicated Block Volume with sufficient VPU (Volume Performance Units) to minimise potential downtime.
+- **Data Import**: For faster, parallel disk operations, use the [concurrent-data-disk-import](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) branch of the Kopru-CLI instead of the main branch.
+
+Please reach out to me directly for advanced downtime optimisation techniques.
 
 ### 3. Clone the Repository
 
