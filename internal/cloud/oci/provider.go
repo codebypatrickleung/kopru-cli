@@ -205,17 +205,19 @@ func (p *Provider) CreateBlockVolume(ctx context.Context, compartmentID, availab
 	if err != nil {
 		return "", fmt.Errorf("failed to create block storage client: %w", err)
 	}
-	
+
+	defaultVpusPerGB := int64(120)
 	maxVpusPerGB := int64(120)
 	autotunePolicies := []core.AutotunePolicy{
 		core.PerformanceBasedAutotunePolicy{
-			MaxVpusPerGB: &maxVpusPerGB,
+            MaxVpusPerGB:     &maxVpusPerGB,
 		},
 	}
 	
 	req := core.CreateVolumeRequest{
 		CreateVolumeDetails: core.CreateVolumeDetails{
 			CompartmentId:      &compartmentID,
+			VpusPerGB:          &defaultVpusPerGB,
 			AvailabilityDomain: &availabilityDomain,
 			DisplayName:        &displayName,
 			SizeInGBs:          &sizeInGBs,
