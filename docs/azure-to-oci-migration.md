@@ -51,13 +51,6 @@ Install Virtio drivers as described [here](https://docs.oracle.com/operating-sys
 
 See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). 
 
-Optimising for Migration downtime:
-
-- **Performance**: Use a VM with at least 4 OCPUs and a dedicated Block Volume with sufficient VPU (Volume Performance Units) to minimise potential downtime.
-- **Data Import**: For faster, parallel disk operations, use the [concurrent-data-disk-import](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) branch of the Kopru-CLI instead of the main branch.
-
-Please reach out to me directly for advanced downtime optimisation techniques.
-
 ### 3. Clone the Repository
 
 ```bash
@@ -149,6 +142,15 @@ Terraform is also supported—replace `tofu` with `terraform`.
 ## Logging
 
 Kopru creates a log file named `kopru-<timestamp>.log` in the current directory. Logs are also shown in the console.
+
+## Performance
+
+Migration of a simple VM can take as little as 15-60 mins. For larger VM, use the following techniques to reduce the migration downtime:
+
+- **Performance**: The bottleneck is usually disk throughput. Using a high-performance disk is one of the most effective ways to save time and improve migration time. Note that disk throughput is closely tied to the number of Oracle CPUs (OCPUs) configured for the instance, which dictates the maximum network bandwidth available for attached block storage.
+- **Data Import**: For faster, parallel disk operations, use the [concurrent-data-disk-import](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) branch of the Kopru-CLI instead of the main branch.
+
+Please feel free to reach out to me for other advanced downtime optimisation techniques. 
 
 ## Post-Migration
 
