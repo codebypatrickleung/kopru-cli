@@ -154,4 +154,7 @@ Please feel free to reach out to me for other advanced downtime optimisation tec
 
 ## Post-Migration
 
-After migration, perform health checks and testing to validate success.
+After migration, perform health checks and testing to validate success. Refer to the following OCI documentations for further details. 
+
+- [Post-Import tasks for Windows](https://docs.oracle.com/iaas/Content/Compute/Tasks/importingcustomimagewindows.htm#postimport)
+- [Post-Import tasks for Linux](https://docs.oracle.com/iaas/Content/Compute/Tasks/importingcustomimagelinux.htm#postimport)
