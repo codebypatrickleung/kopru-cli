@@ -111,4 +111,3 @@ After deployment, perform health checks and validation. Default login users are:
 - Debian: `debian`
 - Fedora: `fedora`
 - CentOS Stream: `cloud-user`
-```
