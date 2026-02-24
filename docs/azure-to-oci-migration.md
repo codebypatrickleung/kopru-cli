@@ -44,19 +44,15 @@ Kopru automatically migrates and reattaches data disks in OCI. For best results,
    **Windows:**  
    Install Virtio drivers as described in the [Oracle documentation](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
 
-Install Virtio drivers as described [here](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
+2. **Launch an Oracle Linux 9 Instance on OCI**  
+   See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/).
 
-### 2. Launch an Oracle Linux 9 Instance in OCI
-
-See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). 
-
-### 3. Clone the Repository
-
-```bash
-dnf install -y git
-git clone https://github.com/codebypatrickleung/kopru-cli.git
-cd kopru-cli
-```
+3. **Clone the Repository**
+   ```bash
+   dnf install -y git
+   git clone https://github.com/codebypatrickleung/kopru-cli.git
+   cd kopru-cli
+   ```
 
 4. **Set Up the Environment**  
    Install dependencies:
