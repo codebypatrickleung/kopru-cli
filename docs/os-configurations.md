@@ -1,16 +1,16 @@
 # OS Configurations
 
-All OS-specific configurations used by the Kopru CLI during image migration are written as bash script files located in the `scripts/os-config/` directory.
+Kopru CLI uses bash script files for all operating system (OS)-specific configurations during image migration. These scripts are located in the `scripts/os-config/` directory.
 
 ## Benefits of Using Bash Scripts
 
-There are several benefits to using bash scripts for OS configurations:
+Using bash scripts for OS configurations provides several advantages:
 
-- **Easier maintenance**: Bash scripts are easier to modify and test independently.
-- **Better separation of concerns**: Any changes to the VM are isolated from the Go application.
-- **Flexibility**: New OS configurations can be added by simply editing the scripts without changing the Go code.
-- **Transparency**: Configuration changes are more visible and auditable.
+- **Easier maintenance:** Scripts can be modified and tested independently.
+- **Separation of concerns:** Changes to the virtual machine are isolated from the Go application.
+- **Flexibility:** New OS configurations can be added by editing scripts without changing Go source code.
+- **Transparency:** Configuration changes are clear, auditable, and easily tracked.
 
-## Configuration Scripts Location
+## Location of Configuration Scripts
 
-You can find all OS configuration scripts in the `scripts/os-config/` directory of the Kopru CLI repository.
+All OS configuration scripts are located in the `scripts/os-config/` directory of the Kopru CLI repository.

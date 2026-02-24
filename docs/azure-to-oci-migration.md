@@ -1,160 +1,149 @@
 # Azure to OCI Migration Workflow
 
-This guide details the steps for migrating Azure VMs to Oracle Cloud Infrastructure (OCI) using Kopru CLI.
+This guide describes the process for migrating Microsoft Azure virtual machines (VMs) to Oracle Cloud Infrastructure (OCI) using the Kopru CLI.
 
 ## Supported Configurations
 
-Kopru has been tested with the following Azure platform images:
+Kopru has been validated with the following Azure platform images:
 
-- **Source Platform:** Microsoft Azure
-- **Operating System:** (If your OS is not listed, you might need to update the [OS configuration script](./os-configurations.md))
+- **Source Platform:** Microsoft Azure  
+- **Operating System:**  
   - Ubuntu 22.04 LTS (x86_64), 24.04 LTS (x86_64, ARM)
   - Debian 13 Trixie (x86_64)
   - Red Hat Enterprise Linux 7.9, 8.1, 9.4 (x86_64)
   - Windows Server 2019, 2022, 2025 Datacenter
-  - SuSE Enterprise Linux 15 SP5, 15 SP6 (x86_64)
-- **Execution Environment:** Oracle Linux 9 in OCI
+  - SUSE Linux Enterprise 15 SP5, 15 SP6 (x86_64)
+- **Execution Environment:** Oracle Linux 9 on OCI
 - **Target Platform:** Oracle Cloud Infrastructure
 
 ### Data Disks
 
-Kopru automatically migrates and reattaches data disks in OCI. For best results, ensure data disks are mounted using UUIDs or LVM, not device paths (e.g., `/dev/sdb1`). If device paths are used, update `/etc/fstab` after migration to reflect new device mappings.
+Kopru automatically migrates and reattaches data disks in OCI. For best results, use UUIDs or LVM to mount data disks, not device paths (such as `/dev/sdb1`). If device paths are used, update `/etc/fstab` after migration to ensure device mappings are correct.
 
 ## Migration Steps
 
-### 1. Check Virtio Drivers in the Source OS
+1. **Verify Virtio Drivers in Source OS**
 
-#### Ubuntu/Debian
+   **Ubuntu/Debian:**  
+   Virtio drivers are included by default. Verify drivers with the following commands:
 
-Virtio drivers are included by default, but verify with:
+   ```bash
+   sudo grep -i virtio /boot/config-$(uname -r)
+   sudo lsinitrd /boot/initramfs-$(uname -r).img | grep virtio
+   ```
 
-```bash
-sudo grep -i virtio /boot/config-$(uname -r)
-sudo lsinitrd /boot/initramfs-$(uname -r).img | grep virtio
-```
+   **Red Hat/CentOS:**  
+   Virtio drivers may not be included in initramfs. Rebuild if needed:
 
-#### Red Hat/CentOS
+   ```bash
+   KERNEL_VERSION=$(uname -r)
+   INITRAMFS_PATH="/boot/initramfs-${KERNEL_VERSION}.img"
+   sudo dracut -v -f --add-drivers "virtio virtio_pci virtio_scsi" "$INITRAMFS_PATH" "$KERNEL_VERSION"
+   ```
 
-Virtio drivers are included but not always in initramfs. Rebuild initramfs if needed:
+   **Windows:**  
+   Install Virtio drivers as described in the [Oracle documentation](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
 
-```bash
-KERNEL_VERSION=$(uname -r)
-INITRAMFS_PATH="/boot/initramfs-${KERNEL_VERSION}.img"
-sudo dracut -v -f --add-drivers "virtio virtio_pci virtio_scsi" "$INITRAMFS_PATH" "$KERNEL_VERSION"
-```
+2. **Launch an Oracle Linux 9 Instance on OCI**  
+   See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/).
 
-#### Windows
+3. **Clone the Repository**
+   ```bash
+   dnf install -y git
+   git clone https://github.com/codebypatrickleung/kopru-cli.git
+   cd kopru-cli
+   ```
 
-Install Virtio drivers as described [here](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
+4. **Set Up the Environment**  
+   Install dependencies:
+   ```bash
+   chmod +x ./scripts/setup-environment.sh
+   bash ./scripts/setup-environment.sh
+   ```
 
-### 2. Launch an Oracle Linux 9 Instance in OCI
+5. **Build Kopru**
+   ```bash
+   go build -buildvcs=false -o kopru ./cmd/kopru
+   ```
 
-See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). 
+6. **Configure Authentication**
 
-### 3. Clone the Repository
+   - **Azure:**  
+     Uses a Service Principal. Assign `Disk Snapshot Contributor` and `Reader` roles to the VM’s resource group. See [Azure Authentication documentation](https://learn.microsoft.com/azure/developer/go/sdk/authentication/authentication-on-premises-apps).
 
-```bash
-dnf install -y git
-git clone https://github.com/codebypatrickleung/kopru-cli.git
-cd kopru-cli
-```
+     Set credentials:
 
-### 4. Set Up the Environment
+     ```bash
+     export AZURE_TENANT_ID="your-tenant-id"
+     export AZURE_CLIENT_ID="your-client-id"
+     export AZURE_CLIENT_SECRET="YOUR_PASSWORD"   # PLEASE CHANGE YOUR_PASSWORD TO A REAL PASSWORD!
+     export AZURE_SUBSCRIPTION_ID="your-subscription-id"
+     ```
 
-Install dependencies:
+   - **OCI:**  
+     Uses API key-based authentication. Ensure you have the correct IAM policies for the target compartment. See [OCI authentication documentation](https://docs.oracle.com/iaas/Content/API/SDKDocs/cliinstall.htm#configfile).
 
-```bash
-chmod +x ./scripts/setup-environment.sh
-bash ./scripts/setup-environment.sh
-```
+     Set up the config:
 
-### 5. Build the Binary
+     ```bash
+     oci setup config
+     ```
 
-```bash
-go build -buildvcs=false -o kopru ./cmd/kopru
-```
+7. **Run the Migration**
 
-### 6. Authentication Setup
+   Provide parameters using environment variables, command-line flags, or a config file.
 
-Kopru requires authentication for both Azure and OCI.
+   Example (environment variables):
 
-#### Azure
+   ```bash
+   export AZURE_COMPUTE_NAME="azure-vm"
+   export AZURE_RESOURCE_GROUP="azure-vm-rg"
+   export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..."
+   export OCI_SUBNET_ID="ocid1.subnet.oc1..."
+   export OCI_IMAGE_OS="Ubuntu"
+   export OCI_IMAGE_OS_VERSION="24.04"
+   export OCI_REGION="us-ashburn-1"
+   export OCI_IMAGE_ENABLE_UEFI=true  # Set true for Windows Gen2 or ARM VMs
+   ./kopru &
+   ```
 
-- Uses a Service Principal.
-- Requires `Disk Snapshot Contributor` and `Reader` roles on the VM's resource group.
-- See [Azure Authentication docs](https://learn.microsoft.com/azure/developer/go/sdk/authentication/authentication-on-premises-apps).
+   For configuration parameters, run `./kopru --help` or refer to the sample configuration file.
 
-Set credentials:
+8. **Manual OpenTofu Deployment (Optional)**
 
-```bash
-export AZURE_TENANT_ID="your-tenant-id"
-export AZURE_CLIENT_ID="your-client-id"
-export AZURE_CLIENT_SECRET="your-client-secret"
-export AZURE_SUBSCRIPTION_ID="your-subscription-id"
-```
+   If you used `--skip-template-deploy`, deploy manually:
 
-#### OCI
+   ```bash
+   cd ./template-output
+   tofu init
+   tofu plan
+   tofu apply
+   ```
 
-- Uses API key-based authentication.
-- Ensure proper IAM policies for the target compartment.
-- See [OCI Authentication docs](https://docs.oracle.com/iaas/Content/API/SDKDocs/cliinstall.htm#configfile).
-
-Set up config:
-
-```bash
-oci setup config
-```
-
-Follow the prompts to generate your OCI configuration file.
-### 7. Running the Migration
-
-Provide parameters via environment variables, command-line flags, or a config file.
-
-Example using environment variables:
-
-```bash
-export AZURE_COMPUTE_NAME="azure-vm"
-export AZURE_RESOURCE_GROUP="azure-vm-rg"
-export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..."
-export OCI_SUBNET_ID="ocid1.subnet.oc1..."
-export OCI_IMAGE_OS="Ubuntu"
-export OCI_IMAGE_OS_VERSION="24.04"
-export OCI_REGION="us-ashburn-1"
-export OCI_IMAGE_ENABLE_UEFI=true  # Set true for Windows Gen2 or ARM VMs
-./kopru &
-```
-
-For all parameters, see `./kopru --help` or [Configuration Parameters](../kopru-config.env.template).
-
-### 8. Manual OpenTofu Deployment (Optional)
-
-If you used `--skip-template-deploy`, deploy manually:
-
-```bash
-cd ./template-output
-tofu init
-tofu plan
-tofu apply
-```
-
-Terraform is also supported—replace `tofu` with `terraform`.
+   Terraform is also supported. Replace `tofu` with `terraform` where appropriate.
 
 ## Logging
 
-Kopru creates a log file named `kopru-<timestamp>.log` in the current directory. Logs are also shown in the console.
+Kopru generates a log file named `kopru-<timestamp>.log` in the current directory. Logs are also written to the console.
 
-## Performance
+## Performance Considerations
 
-Migration of a simple VM can take as little as 15-60 mins. For larger VM, use the following techniques to reduce the migration downtime:
+For simple VMs, migration may take 15–60 minutes. For larger VMs, consider the following optimisations:
 
-- **Performance**: The bottleneck is usually disk throughput. Using a high-performance disk is one of the most effective ways to save time and improve migration time. Note that disk throughput is closely tied to the number of Oracle CPUs (OCPUs) configured for the instance, which dictates the maximum network bandwidth available for attached block storage.
-- **Data Import**: For faster, parallel disk operations, use the [concurrent-data-disk-import](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) branch of the Kopru-CLI instead of the main branch.
+- **Performance:**  
+  Disk throughput is a common bottleneck. Use high-performance disks and allocate sufficient OCPUs to increase available network bandwidth for block storage.
 
-Please feel free to reach out to me for other advanced downtime optimisation techniques. 
+- **Data Import:**  
+  For faster, parallel disk operations, use the [concurrent-data-disk-import branch](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) of the Kopru CLI.
+
+Contact the project maintainer for additional downtime optimisation techniques.
 
 ## Post-Migration
 
-After migration, perform health checks and testing to validate success. Refer to the following OCI documentations for further details. 
-
+After migration, perform health checks and testing to validate success. See the following for post-import tasks:
 - [Post-Import tasks for Windows](https://docs.oracle.com/iaas/Content/Compute/Tasks/importingcustomimagewindows.htm#postimport)
 - [Post-Import tasks for Linux](https://docs.oracle.com/iaas/Content/Compute/Tasks/importingcustomimagelinux.htm#postimport)
+
+---
+
+If you have specific instructions or requirements for further adaptation, let me know!
