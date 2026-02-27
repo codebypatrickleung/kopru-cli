@@ -30,6 +30,8 @@ type AzureToOCIHandler struct {
 	azureVMCPUs           int32
 	azureVMMemoryGB       int32
 	azureVMArchitecture   string
+	osExportDir           string
+	dataExportDir         string
 	templateOutputDir     string
 	importedImageID       string
 }
@@ -49,8 +51,11 @@ func (h *AzureToOCIHandler) Initialize(cfg *config.Config, log *logger.Logger) e
 		return fmt.Errorf("failed to initialize OCI provider: %w", err)
 	}
 
-	// Set template output directory based on Azure compute name
-	h.templateOutputDir = fmt.Sprintf("./%s-template-output", common.SanitizeName(cfg.AzureComputeName))
+	// Set export and template output directories based on Azure compute name
+	sanitizedName := common.SanitizeName(cfg.AzureComputeName)
+	h.osExportDir = fmt.Sprintf("./%s-os-disk-export", sanitizedName)
+	h.dataExportDir = fmt.Sprintf("./%s-data-disk-exports", sanitizedName)
+	h.templateOutputDir = fmt.Sprintf("./%s-template-output", sanitizedName)
 
 	return nil
 }
@@ -244,17 +249,16 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) exportOSDisk(ctx context.Context) error {
 	h.logger.Step(3, "Exporting OS Disk")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	if err := common.EnsureDir(exportDir); err != nil {
+	if err := common.EnsureDir(h.osExportDir); err != nil {
 		return fmt.Errorf("failed to create export directory: %w", err)
 	}
-	h.logger.Infof("Export directory: %s", exportDir)
+	h.logger.Infof("Export directory: %s", h.osExportDir)
 	osDiskName, err := h.azureProvider.GetComputeOSDiskName(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		return fmt.Errorf("failed to get OS disk name: %w", err)
 	}
 	h.logger.Infof("OS disk name: %s", osDiskName)
-	vhdFile, err := h.azureProvider.ExportAzureDisk(ctx, osDiskName, h.config.AzureResourceGroup, exportDir)
+	vhdFile, err := h.azureProvider.ExportAzureDisk(ctx, osDiskName, h.config.AzureResourceGroup, h.osExportDir)
 	if err != nil {
 		return fmt.Errorf("failed to export OS disk: %w", err)
 	}
@@ -264,8 +268,7 @@ func (h *AzureToOCIHandler) exportOSDisk(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) convertDisk(ctx context.Context) error {
 	h.logger.Step(4, "Converting VHD to QCOW2")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	vhdFile, err := common.FindDiskFile(exportDir, ".vhd")
+	vhdFile, err := common.FindDiskFile(h.osExportDir, ".vhd")
 	if err != nil {
 		return fmt.Errorf("failed to find VHD file: %w", err)
 	}
@@ -281,8 +284,7 @@ func (h *AzureToOCIHandler) convertDisk(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 	h.logger.Step(5, "Configuring Image for OCI")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -302,8 +304,7 @@ func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) uploadImage(ctx context.Context) error {
 	h.logger.Step(6, "Uploading Image to OCI")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -365,11 +366,10 @@ func (h *AzureToOCIHandler) importOSImage(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 	h.logger.Step(8, "Exporting Data Disks")
-	exportDir := fmt.Sprintf("./%s-data-disk-exports", common.SanitizeName(h.config.AzureComputeName))
-	if err := common.EnsureDir(exportDir); err != nil {
+	if err := common.EnsureDir(h.dataExportDir); err != nil {
 		return fmt.Errorf("failed to create export directory: %w", err)
 	}
-	h.logger.Infof("Export directory: %s", exportDir)
+	h.logger.Infof("Export directory: %s", h.dataExportDir)
 	diskNames, err := h.azureProvider.GetComputeDataDiskNames(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		return fmt.Errorf("failed to get data disk names: %w", err)
@@ -391,7 +391,7 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 				wg.Done()
 			}()
 			h.logger.Infof("Exporting data disk: %s", diskName)
-			if _, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, exportDir); err != nil {
+			if _, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, h.dataExportDir); err != nil {
 				h.logger.Warningf("Failed to export data disk %s: %v", diskName, err)
 				return
 			}
@@ -406,12 +406,11 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Step(9, "Importing Data Disks")
 	h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames = []string{}, []string{}
-	exportDir := fmt.Sprintf("./%s-data-disk-exports", common.SanitizeName(h.config.AzureComputeName))
-	if _, err := os.Stat(exportDir); os.IsNotExist(err) {
+	if _, err := os.Stat(h.dataExportDir); os.IsNotExist(err) {
 		h.logger.Info("No data disk export directory found - skipping data disk import")
 		return nil
 	}
-	vhdFiles, err := filepath.Glob(filepath.Join(exportDir, "*.vhd"))
+	vhdFiles, err := filepath.Glob(filepath.Join(h.dataExportDir, "*.vhd"))
 	if err != nil {
 		return fmt.Errorf("failed to find VHD files: %w", err)
 	}
@@ -635,8 +634,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 }
 
 func (h *AzureToOCIHandler) getImageImportDetails(ctx context.Context) (namespace, objectName string, err error) {
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -652,8 +650,7 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 	h.logger.Step(10, "Generating Template")
 	if h.azureOSDiskSizeGB == 0 {
 		h.logger.Info("Reading OS disk size from QCOW2 file...")
-		exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-		qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+		qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 		if err != nil {
 			return fmt.Errorf("failed to find QCOW2 file: %w", err)
 		}
@@ -710,12 +707,11 @@ func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
 	h.logger.Step(12, "Verifying Workflow")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
 	if !h.config.SkipExport {
-		if vhdFile, err := common.FindDiskFile(exportDir, ".vhd"); err == nil {
+		if vhdFile, err := common.FindDiskFile(h.osExportDir, ".vhd"); err == nil {
 			h.logger.Successf("✓ VHD file exists: %s", filepath.Base(vhdFile))
 		}
-		if qcow2File, err := common.FindDiskFile(exportDir, ".qcow2"); err == nil {
+		if qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2"); err == nil {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
 	}
