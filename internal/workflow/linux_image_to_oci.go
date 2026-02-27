@@ -139,7 +139,7 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	availableBytes, err := common.GetAvailableDiskSpace(".", common.MinDiskSpaceGB)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Disk space check: %v", err))
+		h.logger.Warningf("Disk space check: %v", err)
 	} else {
 		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}

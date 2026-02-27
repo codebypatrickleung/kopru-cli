@@ -95,7 +95,7 @@ func (g *OCIGenerator) selectOCIShape() string {
 // calculateOCIResources determines the appropriate OCPU and memory configuration for OCI.
 func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
 	if g.vmCPUs == 0 || g.vmMemoryGB == 0 {
-		g.logger.Warning(fmt.Sprintf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB))
+		g.logger.Warningf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB)
 		return DefaultOCPUs, DefaultMemoryGB
 	}
 

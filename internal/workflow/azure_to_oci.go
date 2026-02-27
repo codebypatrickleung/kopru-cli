@@ -150,7 +150,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	availableBytes, err := common.GetAvailableDiskSpace(".", common.MinDiskSpaceGB)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Disk space check: %v", err))
+		h.logger.Warningf("Disk space check: %v", err)
 	} else {
 		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}
@@ -166,7 +166,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Successf("✓ Compute instance OS type: %s", osType)
 	cpus, memoryGB, err := h.azureProvider.GetComputeCPUAndMemory(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Failed to get VM CPU/memory configuration: %v", err))
+		h.logger.Warningf("Failed to get VM CPU/memory configuration: %v", err)
 		h.logger.Warning("Will use default configuration (1 OCPU, 12 GB) for OCI instance")
 		h.azureVMCPUs = 0
 		h.azureVMMemoryGB = 0
@@ -177,7 +177,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	architecture, err := h.azureProvider.GetComputeArchitecture(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Failed to get VM architecture: %v", err))
+		h.logger.Warningf("Failed to get VM architecture: %v", err)
 		h.logger.Warning("Will assume x86_64 architecture for OCI instance")
 		h.azureVMArchitecture = "x86_64"
 	} else {
@@ -392,7 +392,7 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 			}()
 			h.logger.Infof("Exporting data disk: %s", diskName)
 			if _, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, exportDir); err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to export data disk %s: %v", diskName, err))
+				h.logger.Warningf("Failed to export data disk %s: %v", diskName, err)
 				return
 			}
 			h.logger.Successf("✓ Exported: %s", diskName)
@@ -463,7 +463,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			h.logger.Infof("[%s] Converting VHD to RAW format...", disk.baseDiskName)
 			if err := common.ConvertVHDToRAW(disk.vhdFile, disk.rawFile); err != nil {
 				convErrors[i] = err
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to convert VHD to RAW: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to convert VHD to RAW: %v", disk.baseDiskName, err)
 			} else {
 				h.logger.Successf("[%s] VHD converted to RAW format", disk.baseDiskName)
 			}
@@ -491,7 +491,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			diskSizeGB, err := common.GetFileSizeGB(disk.rawFile)
 			if err != nil {
 				ddErrors[i] = fmt.Errorf("failed to get disk size: %w", err)
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to get disk size: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to get disk size: %v", disk.baseDiskName, err)
 				return
 			}
 			volumeName := fmt.Sprintf("bv-%s", disk.baseDiskName)
@@ -499,7 +499,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
 			if err != nil {
 				ddErrors[i] = fmt.Errorf("failed to create OCI volume: %w", err)
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to create OCI volume: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to create OCI volume: %v", disk.baseDiskName, err)
 				return
 			}
 			h.logger.Successf("[%s] Created volume: %s", disk.baseDiskName, volumeID)
@@ -511,7 +511,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			if err != nil {
 				attachMu.Unlock()
 				ddErrors[i] = fmt.Errorf("failed to list block devices: %w", err)
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to list block devices: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to list block devices: %v", disk.baseDiskName, err)
 				return
 			}
 			h.logger.Infof("[%s] Attaching volume to local instance...", disk.baseDiskName)
@@ -519,16 +519,16 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			if err != nil {
 				attachMu.Unlock()
 				ddErrors[i] = fmt.Errorf("failed to attach volume: %w", err)
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to attach volume: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to attach volume: %v", disk.baseDiskName, err)
 				return
 			}
 			h.logger.Infof("[%s] Volume attached (attachment: %s)", disk.baseDiskName, attachmentID)
 			attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
 			attachMu.Unlock()
 			if err != nil {
-				h.logger.Warning(fmt.Sprintf("[%s] Could not detect attached device: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Could not detect attached device: %v", disk.baseDiskName, err)
 				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-					h.logger.Warning(fmt.Sprintf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr))
+					h.logger.Warningf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr)
 				}
 				ddErrors[i] = fmt.Errorf("failed to detect attached device: %w", err)
 				return
@@ -537,9 +537,9 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 
 			h.logger.Infof("[%s] Copying data from RAW file to %s (this may take a while)...", disk.baseDiskName, attachedDevice)
 			if err := common.CopyDataWithDD(disk.rawFile, attachedDevice); err != nil {
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to copy data: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to copy data: %v", disk.baseDiskName, err)
 				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-					h.logger.Warning(fmt.Sprintf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr))
+					h.logger.Warningf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr)
 				}
 				ddErrors[i] = fmt.Errorf("failed to copy data with dd: %w", err)
 				return
@@ -548,7 +548,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 
 			h.logger.Infof("[%s] Detaching volume...", disk.baseDiskName)
 			if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to detach volume: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to detach volume: %v", disk.baseDiskName, err)
 			} else {
 				h.logger.Infof("[%s] Volume detached", disk.baseDiskName)
 			}
@@ -577,7 +577,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeIDs[i], snapshotName)
 			if err != nil {
 				snapshotErrors[i] = err
-				h.logger.Warning(fmt.Sprintf("[%s] Failed to create snapshot: %v", disk.baseDiskName, err))
+				h.logger.Warningf("[%s] Failed to create snapshot: %v", disk.baseDiskName, err)
 				return
 			}
 			snapshotIDs[i] = snapshotID
@@ -614,7 +614,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			}()
 			h.logger.Infof("Deleting volume %s...", volumeID)
 			if err := h.ociProvider.DeleteVolume(ctx, volumeID); err != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to delete volume %s: %v", volumeID, err))
+				h.logger.Warningf("Failed to delete volume %s: %v", volumeID, err)
 			} else {
 				h.logger.Successf("[%s] Volume deleted", disks[i].baseDiskName)
 			}

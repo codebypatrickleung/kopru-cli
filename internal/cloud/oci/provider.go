@@ -399,7 +399,7 @@ func (p *Provider) DeleteVolume(ctx context.Context, volumeID string) error {
 	}
 	err = p.WaitForVolumeState(ctx, volumeID, core.VolumeLifecycleStateTerminated)
 	if err != nil {
-		p.logger.Warning(fmt.Sprintf("Could not verify volume deletion: %v", err))
+		p.logger.Warningf("Could not verify volume deletion: %v", err)
 	}
 	return nil
 }
