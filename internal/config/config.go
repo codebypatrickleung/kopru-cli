@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	defaultImageName        = "kopru-image"
-	defaultInstanceName     = "kopru-instance"
-	imageSuffix             = "-image"
+	defaultImageName           = "kopru-image"
+	defaultInstanceName        = "kopru-instance"
+	imageSuffix                = "-image"
 	defaultDataDiskParallelism = 2
 )
 

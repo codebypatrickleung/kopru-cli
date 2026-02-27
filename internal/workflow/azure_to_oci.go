@@ -73,12 +73,12 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 	}{
 		{h.config.SkipExport, "Skipping OS disk export (SKIP_OS_EXPORT=true)", "OS disk export failed", h.exportOSDisk},
 	}
-	
+
 	// Run prerequisite checks
 	if err := h.runPrerequisites(ctx); err != nil {
 		return fmt.Errorf("prerequisite checks failed: %w", err)
 	}
-	
+
 	// Run steps with skip logic
 	for _, step := range steps {
 		if step.skip {
@@ -89,7 +89,7 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 			return fmt.Errorf("%s: %w", step.errMsg, err)
 		}
 	}
-	
+
 	if err := h.convertDisk(ctx); err != nil {
 		return fmt.Errorf("disk conversion failed: %w", err)
 	}
@@ -110,6 +110,9 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 	}
 	if err := h.generateTemplate(ctx); err != nil {
 		return fmt.Errorf("template generation failed: %w", err)
+	}
+	if err := h.waitForImageImportCompletion(ctx); err != nil {
+		return fmt.Errorf("failed waiting for image import: %w", err)
 	}
 
 	if !h.config.SkipTemplateDeploy {
@@ -333,7 +336,7 @@ func (h *AzureToOCIHandler) uploadImage(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) importOSImage(ctx context.Context) error {
 	h.logger.Step(7, "Importing OS Image in OCI")
-	
+
 	namespace, objectName, err := h.getImageImportDetails(ctx)
 	if err != nil {
 		return err
@@ -360,7 +363,7 @@ func (h *AzureToOCIHandler) importOSImage(ctx context.Context) error {
 	h.importedImageID = imageID
 	h.logger.Successf("OS image import started with ID: %s", imageID)
 	h.logger.Info("Continuing with data disk operations while image imports in background...")
-	
+
 	return nil
 }
 
@@ -691,11 +694,7 @@ func (h *AzureToOCIHandler) waitForImageImportCompletion(ctx context.Context) er
 
 func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 	h.logger.Step(11, "Deploying the template")
-	
-	if err := h.waitForImageImportCompletion(ctx); err != nil {
-		return fmt.Errorf("failed waiting for image import: %w", err)
-	}
-	
+
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, h.importedImageID,
 		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,

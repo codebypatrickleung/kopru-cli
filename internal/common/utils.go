@@ -274,7 +274,7 @@ func executeScript(imageFile, scriptPath string, log *logger.Logger, isBuiltIn b
 	} else {
 		fullScriptPath = scriptPath
 	}
-	
+
 	// #nosec G302 -- script must be executable by owner
 	if err := os.Chmod(fullScriptPath, 0700); err != nil {
 		log.Warning(fmt.Sprintf("Could not make script executable: %v", err))

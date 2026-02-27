@@ -209,10 +209,10 @@ func (p *Provider) CreateBlockVolume(ctx context.Context, compartmentID, availab
 	maxVpusPerGB := int64(120)
 	autotunePolicies := []core.AutotunePolicy{
 		core.PerformanceBasedAutotunePolicy{
-            MaxVpusPerGB:     &maxVpusPerGB,
+			MaxVpusPerGB: &maxVpusPerGB,
 		},
 	}
-	
+
 	req := core.CreateVolumeRequest{
 		CreateVolumeDetails: core.CreateVolumeDetails{
 			CompartmentId:      &compartmentID,
