@@ -283,7 +283,7 @@ func executeScript(imageFile, scriptPath string, log *logger.Logger, isBuiltIn b
 	env := append(os.Environ(), fmt.Sprintf("KOPRU_IMAGE_FILE=%s", imageFile))
 	var cmd *exec.Cmd
 	if isBuiltIn {
-		// #nosec G204 -- script is user-provided
+		// #nosec G204 -- fullScriptPath is resolved from the application's own executable directory
 		cmd = exec.Command("sudo", fullScriptPath, imageFile)
 	} else {
 		// #nosec G204 -- script is user-provided

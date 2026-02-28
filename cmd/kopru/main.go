@@ -148,7 +148,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := mgr.Run(ctx); err != nil {
-		log.Error(fmt.Sprintf("Workflow failed: %v", err))
+		log.Errorf("Workflow failed: %v", err)
 		return err
 	}
 

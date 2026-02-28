@@ -13,7 +13,7 @@ const (
 	defaultImageName           = "kopru-image"
 	defaultInstanceName        = "kopru-instance"
 	imageSuffix                = "-image"
-	defaultDataDiskParallelism = 2
+	defaultDataDiskParallelism = 4
 )
 
 // Config holds all configuration for the Kopru CLI.

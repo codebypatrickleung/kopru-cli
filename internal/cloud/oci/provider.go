@@ -120,25 +120,6 @@ func (p *Provider) CheckSubnetExists(ctx context.Context, subnetID string) error
 	return nil
 }
 
-// GetFirstAvailabilityDomain retrieves the first availability domain in a compartment.
-func (p *Provider) GetFirstAvailabilityDomain(ctx context.Context, compartmentID string) (string, error) {
-	client, err := identity.NewIdentityClientWithConfigurationProvider(p.configProvider)
-	if err != nil {
-		return "", fmt.Errorf("failed to create identity client: %w", err)
-	}
-	req := identity.ListAvailabilityDomainsRequest{
-		CompartmentId: &compartmentID,
-	}
-	resp, err := client.ListAvailabilityDomains(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("failed to list availability domains: %w", err)
-	}
-	if len(resp.Items) == 0 {
-		return "", fmt.Errorf("no availability domains found")
-	}
-	return *resp.Items[0].Name, nil
-}
-
 // GetLocalAvailabilityDomain retrieves the availability domain of the local instance.
 func (p *Provider) GetLocalAvailabilityDomain(ctx context.Context, instanceID string) (string, error) {
 	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
@@ -488,22 +469,4 @@ func (p *Provider) WaitForImageState(ctx context.Context, imageID string, target
 		case <-ticker.C:
 		}
 	}
-}
-
-// GetImage retrieves the details of an image.
-func (p *Provider) GetImage(ctx context.Context, imageID string) (*core.Image, error) {
-	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create compute client: %w", err)
-	}
-
-	req := core.GetImageRequest{
-		ImageId: &imageID,
-	}
-	resp, err := client.GetImage(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get image: %w", err)
-	}
-
-	return &resp.Image, nil
 }

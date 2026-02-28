@@ -59,6 +59,3 @@ func (r *Registry) List() []Handler {
 	}
 	return handlers
 }
-
-// DefaultRegistry is the global workflow registry.
-var DefaultRegistry = NewRegistry()

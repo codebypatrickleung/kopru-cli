@@ -99,6 +99,10 @@ func (h *LinuxImageToOCIHandler) Execute(ctx context.Context) error {
 		return fmt.Errorf("template generation failed: %w", err)
 	}
 
+	if err := h.waitForImageImportCompletion(ctx); err != nil {
+		return fmt.Errorf("failed waiting for image import: %w", err)
+	}
+
 	if !h.config.SkipTemplateDeploy {
 		if err := h.deployTemplate(ctx); err != nil {
 			return fmt.Errorf("template deployment failed: %w", err)
@@ -153,6 +157,9 @@ func (h *LinuxImageToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	if _, ok := allowedOS[h.config.OCIImageOS]; !ok {
 		return fmt.Errorf("invalid OCI_IMAGE_OS: '%s'. Allowed values: 'Oracle Linux', 'AlmaLinux', 'CentOS', 'Debian', 'RHEL', 'Rocky Linux', 'SUSE', 'Ubuntu', 'Windows'", h.config.OCIImageOS)
+	}
+	if h.config.OCIImageOSVersion == "" {
+		return fmt.Errorf("operating system version (OCI_IMAGE_OS_VERSION) is required")
 	}
 	h.logger.Successf("✓ Operating system configured for OCI: %s %s", h.config.OCIImageOS, h.config.OCIImageOSVersion)
 
@@ -397,10 +404,6 @@ func (h *LinuxImageToOCIHandler) waitForImageImportCompletion(ctx context.Contex
 
 func (h *LinuxImageToOCIHandler) deployTemplate(ctx context.Context) error {
 	h.logger.Step(8, "Deploying the template")
-
-	if err := h.waitForImageImportCompletion(ctx); err != nil {
-		return fmt.Errorf("failed waiting for image import: %w", err)
-	}
 
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, h.importedImageID,
