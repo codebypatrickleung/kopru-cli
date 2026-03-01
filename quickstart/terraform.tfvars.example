@@ -1,0 +1,38 @@
+# ==============================================================================
+# Terraform Variables Example File
+# ==============================================================================
+# Copy this file to terraform.tfvars and update with your values
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# REQUIRED VARIABLES
+# ------------------------------------------------------------------------------
+
+# The OCID of the compartment where resources will be created
+compartment_ocid = "ocid1.compartment.oc1..."
+
+# The OCID of the subnet where the instance will be deployed
+subnet_ocid = "ocid1.subnet.oc1..."
+
+# SSH public key for instance access
+ssh_public_key = "ssh-rsa AAAAB..."
+
+# OCI region
+region = "us-ashburn-1"
+
+# ------------------------------------------------------------------------------
+# OPTIONAL VARIABLES (uncomment and modify as needed)
+# ------------------------------------------------------------------------------
+# display_name = "kopru"
+# instance_ad_number = 1
+# shape = "VM.Optimized3.Flex"
+# instance_ocpus = 6
+# instance_memory_in_gbs = 12
+# assign_public_ip = false
+# boot_volume_size_in_gbs = 100
+# data_volume_size_in_gbs = 500
+# data_disk_mount_point = "/kopru"
+# freeform_tags = {
+#   "Environment" = "Migration"
+#   "Project"     = "Kopru"
+# }
