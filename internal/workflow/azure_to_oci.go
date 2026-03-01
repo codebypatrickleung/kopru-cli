@@ -21,20 +21,20 @@ import (
 
 // AzureToOCIHandler implements the workflow for migrating Compute instances from Azure to OCI.
 type AzureToOCIHandler struct {
-	config                *config.Config
-	logger                *logger.Logger
-	azureProvider         *azure.Provider
-	ociProvider           *oci.Provider
-	dataDiskSnapshotIDs   []string
-	dataDiskSnapshotNames []string
-	azureOSDiskSizeGB     int64
-	azureVMCPUs           int32
-	azureVMMemoryGB       int32
-	azureVMArchitecture   string
-	osExportDir           string
-	dataExportDir         string
-	templateOutputDir     string
-	importedImageID       string
+	config              *config.Config
+	logger              *logger.Logger
+	azureProvider       *azure.Provider
+	ociProvider         *oci.Provider
+	dataDiskVolumeIDs   []string
+	dataDiskVolumeNames []string
+	azureOSDiskSizeGB   int64
+	azureVMCPUs         int32
+	azureVMMemoryGB     int32
+	azureVMArchitecture string
+	osExportDir         string
+	dataExportDir       string
+	templateOutputDir   string
+	importedImageID     string
 }
 
 func NewAzureToOCIHandler() *AzureToOCIHandler      { return &AzureToOCIHandler{} }
@@ -411,7 +411,7 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Step(9, "Importing Data Disks")
-	h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames = []string{}, []string{}
+	h.dataDiskVolumeIDs, h.dataDiskVolumeNames = []string{}, []string{}
 	if _, err := os.Stat(h.dataExportDir); os.IsNotExist(err) {
 		h.logger.Info("No data disk export directory found - skipping data disk import")
 		return nil
@@ -479,6 +479,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	// Phase 2: Copy data to OCI block volumes in parallel.
 	h.logger.Info("Phase 2: Copying data to OCI block volumes in parallel...")
 	volumeIDs := make([]string, n)
+	volumeNames := make([]string, n)
 	ddErrors := make([]error, n)
 	var attachMu sync.Mutex
 	for i, disk := range disks {
@@ -509,6 +510,7 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			}
 			h.logger.Successf("[%s] Created volume: %s", disk.baseDiskName, volumeID)
 			volumeIDs[i] = volumeID
+			volumeNames[i] = volumeName
 
 			// Serialize attach+detect to reliably identify the newly attached device
 			attachMu.Lock()
@@ -561,79 +563,24 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	}
 	wg.Wait()
 
-	// Phase 3: Create snapshots in parallel
-	h.logger.Info("Phase 3: Creating snapshots in parallel...")
-	snapshotIDs := make([]string, n)
-	snapshotNames := make([]string, n)
-	snapshotErrors := make([]error, n)
-	for i, disk := range disks {
-		if ddErrors[i] != nil || volumeIDs[i] == "" {
-			continue
-		}
-		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer func() {
-				<-sem
-				wg.Done()
-			}()
-			snapshotName := fmt.Sprintf("ss-%s", disk.baseDiskName)
-			h.logger.Infof("[%s] Creating snapshot: %s...", disk.baseDiskName, snapshotName)
-			snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeIDs[i], snapshotName)
-			if err != nil {
-				snapshotErrors[i] = err
-				h.logger.Warningf("[%s] Failed to create snapshot: %v", disk.baseDiskName, err)
-				return
-			}
-			snapshotIDs[i] = snapshotID
-			snapshotNames[i] = snapshotName
-			h.logger.Successf("[%s] Created snapshot: %s", disk.baseDiskName, snapshotID)
-		}()
-	}
-	wg.Wait()
-
-	// Collect snapshot results and count failures
 	var failedCount int
 	for i := range disks {
-		if convErrors[i] != nil || ddErrors[i] != nil || snapshotErrors[i] != nil {
+		if convErrors[i] != nil || ddErrors[i] != nil {
 			failedCount++
 		}
-		if snapshotIDs[i] != "" {
-			h.dataDiskSnapshotIDs = append(h.dataDiskSnapshotIDs, snapshotIDs[i])
-			h.dataDiskSnapshotNames = append(h.dataDiskSnapshotNames, snapshotNames[i])
+		if volumeIDs[i] != "" {
+			h.dataDiskVolumeIDs = append(h.dataDiskVolumeIDs, volumeIDs[i])
+			h.dataDiskVolumeNames = append(h.dataDiskVolumeNames, volumeNames[i])
 		}
 	}
-
-	// Cleanup: delete all created block volumes in parallel
-	h.logger.Info("Cleaning up temporary block volumes...")
-	for i, volumeID := range volumeIDs {
-		if volumeID == "" {
-			continue
-		}
-		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer func() {
-				<-sem
-				wg.Done()
-			}()
-			h.logger.Infof("Deleting volume %s...", volumeID)
-			if err := h.ociProvider.DeleteVolume(ctx, volumeID); err != nil {
-				h.logger.Warningf("Failed to delete volume %s: %v", volumeID, err)
-			} else {
-				h.logger.Successf("[%s] Volume deleted", disks[i].baseDiskName)
-			}
-		}()
-	}
-	wg.Wait()
 
 	h.logger.Info("=========================================")
 	h.logger.Success("Data disk import completed")
-	h.logger.Infof("  Snapshots created: %d", len(h.dataDiskSnapshotIDs))
+	h.logger.Infof("  Volumes imported: %d", len(h.dataDiskVolumeIDs))
 	h.logger.Infof("  Failed: %d", failedCount)
-	if len(h.dataDiskSnapshotIDs) > 0 {
-		h.logger.Infof("  Snapshot OCIDs: %v", h.dataDiskSnapshotIDs)
-		h.logger.Infof("  Snapshot Names: %v", h.dataDiskSnapshotNames)
+	if len(h.dataDiskVolumeIDs) > 0 {
+		h.logger.Infof("  Volume OCIDs: %v", h.dataDiskVolumeIDs)
+		h.logger.Infof("  Volume Names: %v", h.dataDiskVolumeNames)
 	}
 	h.logger.Info("=========================================")
 	if failedCount > 0 {
@@ -676,7 +623,7 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 	}
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, h.importedImageID,
-		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
+		h.dataDiskVolumeIDs, h.dataDiskVolumeNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
 		h.templateOutputDir,
 	)
@@ -703,7 +650,7 @@ func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, h.importedImageID,
-		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
+		h.dataDiskVolumeIDs, h.dataDiskVolumeNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
 		h.templateOutputDir,
 	)
