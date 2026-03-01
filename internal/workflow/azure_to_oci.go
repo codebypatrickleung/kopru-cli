@@ -3,6 +3,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -383,9 +384,10 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 	}
 	h.logger.Infof("Found %d data disk(s) to export", len(diskNames))
 	h.logger.Info("Exporting all data disks in parallel...")
+	exportErrors := make([]error, len(diskNames))
 	sem := make(chan struct{}, h.config.DataDiskParallelism)
 	var wg sync.WaitGroup
-	for _, diskName := range diskNames {
+	for i, diskName := range diskNames {
 		sem <- struct{}{}
 		wg.Add(1)
 		go func() {
@@ -395,6 +397,7 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 			}()
 			h.logger.Infof("Exporting data disk: %s", diskName)
 			if _, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, h.dataExportDir); err != nil {
+				exportErrors[i] = err
 				h.logger.Warningf("Failed to export data disk %s: %v", diskName, err)
 				return
 			}
@@ -403,7 +406,7 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 	}
 	wg.Wait()
 	h.logger.Success("Data disks exported")
-	return nil
+	return errors.Join(exportErrors...)
 }
 
 func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
@@ -633,6 +636,9 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 		h.logger.Infof("  Snapshot Names: %v", h.dataDiskSnapshotNames)
 	}
 	h.logger.Info("=========================================")
+	if failedCount > 0 {
+		return fmt.Errorf("%d of %d data disk(s) failed to import", failedCount, n)
+	}
 	return nil
 }
 

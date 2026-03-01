@@ -128,7 +128,7 @@ Kopru generates a log file named `kopru-<timestamp>.log` in the current director
 
 ## Performance Considerations
 
-For simple VMs, migration may take 15–60 minutes. For larger VMs, consider the following optimisations:
+For simple VMs, migration may take 15–90 minutes. For larger VMs, consider the following optimisations:
 
 - **Performance:**  
   Disk throughput is a common bottleneck. Use high-performance disks and allocate sufficient OCPUs to increase available network bandwidth for block storage.
@@ -136,7 +136,7 @@ For simple VMs, migration may take 15–60 minutes. For larger VMs, consider the
 - **Data Import:**  
   For faster, parallel disk operations, use the [concurrent-data-disk-import branch](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) of the Kopru CLI.
 
-Contact the project maintainer for additional downtime optimisation techniques.
+Downtime optimisation is highly dependent on the specific nature, criticality, and data volume of the workload, requiring tailored strategies rather than a one-size-fits-all approach. Feel free to reach out for additional downtime optimisation techniques. 
 
 ## Post-Migration
 

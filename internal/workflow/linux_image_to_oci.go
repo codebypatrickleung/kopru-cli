@@ -232,11 +232,7 @@ func (h *LinuxImageToOCIHandler) downloadOSImage(ctx context.Context) error {
 
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return nil
-		},
-	}
+	client := &http.Client{}
 
 	resp, err := client.Do(req)
 	if err != nil {
