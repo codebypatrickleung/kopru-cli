@@ -424,6 +424,10 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 		h.logger.Info("No data disk VHD files found - skipping data disk import")
 		return nil
 	}
+	const maxDataDisks = 32
+	if len(vhdFiles) > maxDataDisks {
+		return fmt.Errorf("too many data disks: found %d, maximum supported is %d", len(vhdFiles), maxDataDisks)
+	}
 	h.logger.Infof("Found %d data disk(s) to import", len(vhdFiles))
 	h.logger.Info("Retrieving local instance information...")
 	localInstanceID, err := h.ociProvider.GetLocalInstanceID(ctx)
@@ -450,6 +454,11 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			rawFile:      strings.TrimSuffix(vhdFile, ".vhd") + ".raw",
 			baseDiskName: strings.TrimSuffix(filepath.Base(vhdFile), ".vhd"),
 		}
+	}
+
+	devicePaths := make([]string, n)
+	for i := range devicePaths {
+		devicePaths[i] = common.DataDiskDevicePath(i)
 	}
 
 	// Phase 1: Convert all VHDs to RAW format in parallel
@@ -481,7 +490,6 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	volumeIDs := make([]string, n)
 	volumeNames := make([]string, n)
 	ddErrors := make([]error, n)
-	var attachMu sync.Mutex
 	for i, disk := range disks {
 		if convErrors[i] != nil {
 			ddErrors[i] = fmt.Errorf("skipping due to conversion failure: %w", convErrors[i])
@@ -512,26 +520,16 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 			volumeIDs[i] = volumeID
 			volumeNames[i] = volumeName
 
-			// Serialize attach+detect to reliably identify the newly attached device
-			attachMu.Lock()
-			beforeDevices, err := common.ListBlockDevices()
+			devicePath := devicePaths[i]
+			h.logger.Infof("[%s] Attaching volume to local instance at %s...", disk.baseDiskName, devicePath)
+			attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID, devicePath)
 			if err != nil {
-				attachMu.Unlock()
-				ddErrors[i] = fmt.Errorf("failed to list block devices: %w", err)
-				h.logger.Warningf("[%s] Failed to list block devices: %v", disk.baseDiskName, err)
-				return
-			}
-			h.logger.Infof("[%s] Attaching volume to local instance...", disk.baseDiskName)
-			attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
-			if err != nil {
-				attachMu.Unlock()
 				ddErrors[i] = fmt.Errorf("failed to attach volume: %w", err)
 				h.logger.Warningf("[%s] Failed to attach volume: %v", disk.baseDiskName, err)
 				return
 			}
 			h.logger.Infof("[%s] Volume attached (attachment: %s)", disk.baseDiskName, attachmentID)
-			attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
-			attachMu.Unlock()
+			attachedDevice, err := common.WaitForDevice(devicePath)
 			if err != nil {
 				h.logger.Warningf("[%s] Could not detect attached device: %v", disk.baseDiskName, err)
 				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {

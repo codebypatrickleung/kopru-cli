@@ -243,8 +243,8 @@ func (p *Provider) WaitForVolumeState(ctx context.Context, volumeID string, targ
 	return fmt.Errorf("timeout waiting for volume to reach state %s", targetState)
 }
 
-// AttachVolume attaches a volume to an instance.
-func (p *Provider) AttachVolume(ctx context.Context, instanceID, volumeID string) (string, error) {
+// AttachVolume attaches a volume to an instance at the specified device path.
+func (p *Provider) AttachVolume(ctx context.Context, instanceID, volumeID, device string) (string, error) {
 	client, err := core.NewComputeClientWithConfigurationProvider(p.configProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to create compute client: %w", err)
@@ -253,6 +253,7 @@ func (p *Provider) AttachVolume(ctx context.Context, instanceID, volumeID string
 		AttachVolumeDetails: core.AttachParavirtualizedVolumeDetails{
 			InstanceId: &instanceID,
 			VolumeId:   &volumeID,
+			Device:     &device,
 		},
 	}
 	resp, err := client.AttachVolume(ctx, req)

@@ -2,8 +2,11 @@
 package common
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestIsWindowsOS(t *testing.T) {
@@ -118,4 +121,62 @@ func TestSliceDifference(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDataDiskDevicePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		index    int
+		expected string
+	}{
+		{"Index 0 → vdb", 0, "/dev/oracleoci/oraclevdb"},
+		{"Index 1 → vdc", 1, "/dev/oracleoci/oraclevdc"},
+		{"Index 2 → vdd", 2, "/dev/oracleoci/oraclevdd"},
+		{"Index 24 → vdz", 24, "/dev/oracleoci/oraclevdz"},
+		{"Index 25 → vdaa", 25, "/dev/oracleoci/oraclevdaa"},
+		{"Index 26 → vdab", 26, "/dev/oracleoci/oraclevdab"},
+		{"Index 31 → vdag", 31, "/dev/oracleoci/oraclevdag"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := DataDiskDevicePath(tt.index)
+			if result != tt.expected {
+				t.Errorf("DataDiskDevicePath(%d) = %q, want %q", tt.index, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWaitForDevice(t *testing.T) {
+	t.Run("Device exists immediately", func(t *testing.T) {
+		dir := t.TempDir()
+		devicePath := filepath.Join(dir, "vdb")
+		if err := os.WriteFile(devicePath, []byte{}, 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := WaitForDevice(devicePath)
+		if err != nil {
+			t.Fatalf("WaitForDevice(%q) returned unexpected error: %v", devicePath, err)
+		}
+		if got != devicePath {
+			t.Errorf("WaitForDevice(%q) = %q, want %q", devicePath, got, devicePath)
+		}
+	})
+
+	t.Run("Device appears after delay", func(t *testing.T) {
+		dir := t.TempDir()
+		devicePath := filepath.Join(dir, "vdc")
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			_ = os.WriteFile(devicePath, []byte{}, 0600)
+		}()
+		got, err := WaitForDevice(devicePath)
+		if err != nil {
+			t.Fatalf("WaitForDevice(%q) returned unexpected error: %v", devicePath, err)
+		}
+		if got != devicePath {
+			t.Errorf("WaitForDevice(%q) = %q, want %q", devicePath, got, devicePath)
+		}
+	})
 }

@@ -184,6 +184,38 @@ func DetectNewBlockDevice(beforeDevices []string) (string, error) {
 	return "", fmt.Errorf("no new block device detected")
 }
 
+// DataDiskDevicePath returns the OCI paravirtualized device path for a data disk at the given index.
+func DataDiskDevicePath(index int) string {
+	const maxIndex = 31
+	if index < 0 || index > maxIndex {
+		panic(fmt.Sprintf("DataDiskDevicePath: index %d out of range [0, %d]", index, maxIndex))
+	}
+	var suffix string
+	if index <= 24 {
+		suffix = string(rune('b' + index))
+	} else {
+		suffix = "a" + string(rune('a'+index-25))
+	}
+	return "/dev/oracleoci/oraclevd" + suffix
+}
+
+// WaitForDevice waits for a specific block device to become available at the given path.
+func WaitForDevice(devicePath string) (string, error) {
+	const (
+		retryInterval = 5 * time.Second
+		maxRetries    = 120
+	)
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval)
+		}
+		if _, err := os.Stat(devicePath); err == nil {
+			return devicePath, nil
+		}
+	}
+	return "", fmt.Errorf("device %s not available after %d retries", devicePath, maxRetries)
+}
+
 // ConvertVHDToQCOW2 converts a VHD file to QCOW2 format. The VHD file is always kept for auditing purposes.
 func ConvertVHDToQCOW2(vhdFile, qcow2File string) error {
 	if output, err := RunCommand("qemu-img", "convert", "-f", "vpc", "-O", "qcow2", vhdFile, qcow2File); err != nil {
