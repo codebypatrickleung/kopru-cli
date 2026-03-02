@@ -165,8 +165,8 @@ func ListBlockDevices() ([]string, error) {
 // DetectNewBlockDevice detects a newly attached block device by comparing before and after device lists.
 func DetectNewBlockDevice(beforeDevices []string) (string, error) {
 	const (
-		retryInterval = 3 * time.Second
-		maxRetries    = 20
+		retryInterval = 5 * time.Second
+		maxRetries    = 120
 	)
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
