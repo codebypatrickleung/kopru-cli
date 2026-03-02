@@ -45,7 +45,7 @@ Kopru automatically migrates and reattaches data disks in OCI. For best results,
    Install Virtio drivers as described in the [Oracle documentation](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
 
 2. **Launch an Oracle Linux 9 Instance on OCI**  
-   See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). Refer to `quickstart` folder (`../quickstart/`) for an example deployment template.
+   See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). Refer to [quickstart folder](../quickstart/) for an example deployment template.
 
 3. **Clone the Repository**
    ```bash
@@ -133,7 +133,7 @@ Migration time varies by VM size, disk count, and throughput. With the right opt
 Recommendations:
 - **Disk throughput:** Often the primary bottleneck. Use higher-performance block volumes and size the OCI instance appropriately (more OCPUs can increase available network bandwidth to storage).
 - **Parallelism:** Tune `DATA_DISK_PARALLELISM` to improve throughput for multi-disk VMs (validate against resource limits and stability).
-- **Infrastructure** The `quickstart` folder (`../quickstart/`) includes an example OCI VM deployment with Kopru installed and tuned for migration.  
+- **Infrastructure** The [quickstart folder](../quickstart/) includes an example OCI VM deployment with Kopru installed and tuned for migration.  
 
 For advance downtime optimisation, please reach out to me for further information.
 
