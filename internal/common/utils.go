@@ -164,16 +164,24 @@ func ListBlockDevices() ([]string, error) {
 
 // DetectNewBlockDevice detects a newly attached block device by comparing before and after device lists.
 func DetectNewBlockDevice(beforeDevices []string) (string, error) {
-	time.Sleep(3 * time.Second)
-	afterDevices, err := ListBlockDevices()
-	if err != nil {
-		return "", err
+	const (
+		retryInterval = 3 * time.Second
+		maxRetries    = 20
+	)
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval)
+		}
+		afterDevices, err := ListBlockDevices()
+		if err != nil {
+			return "", fmt.Errorf("failed to list block devices on attempt %d: %w", i+1, err)
+		}
+		newDevices := SliceDifference(afterDevices, beforeDevices)
+		if len(newDevices) > 0 {
+			return "/dev/" + newDevices[0], nil
+		}
 	}
-	newDevices := SliceDifference(afterDevices, beforeDevices)
-	if len(newDevices) == 0 {
-		return "", fmt.Errorf("no new block device detected")
-	}
-	return "/dev/" + newDevices[0], nil
+	return "", fmt.Errorf("no new block device detected")
 }
 
 // ConvertVHDToQCOW2 converts a VHD file to QCOW2 format. The VHD file is always kept for auditing purposes.

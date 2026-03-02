@@ -2,6 +2,7 @@
 package common
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -89,6 +90,31 @@ func TestSanitizeName(t *testing.T) {
 			result := SanitizeName(tt.input)
 			if result != tt.expected {
 				t.Errorf("SanitizeName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSliceDifference(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        []string
+		b        []string
+		expected []string
+	}{
+		{"New device added", []string{"sda", "sdb", "sdc"}, []string{"sda", "sdb"}, []string{"sdc"}},
+		{"No new devices", []string{"sda", "sdb"}, []string{"sda", "sdb"}, nil},
+		{"All new devices", []string{"sda", "sdb"}, []string{}, []string{"sda", "sdb"}},
+		{"Empty a", []string{}, []string{"sda"}, nil},
+		{"Both empty", []string{}, []string{}, nil},
+		{"Device removed from a but not in b", []string{"sda", "sdc"}, []string{"sda", "sdb"}, []string{"sdc"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SliceDifference(tt.a, tt.b)
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("SliceDifference(%v, %v) = %v, want %v", tt.a, tt.b, result, tt.expected)
 			}
 		})
 	}
