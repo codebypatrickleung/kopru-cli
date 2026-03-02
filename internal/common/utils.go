@@ -164,16 +164,56 @@ func ListBlockDevices() ([]string, error) {
 
 // DetectNewBlockDevice detects a newly attached block device by comparing before and after device lists.
 func DetectNewBlockDevice(beforeDevices []string) (string, error) {
-	time.Sleep(3 * time.Second)
-	afterDevices, err := ListBlockDevices()
-	if err != nil {
-		return "", err
+	const (
+		retryInterval = 5 * time.Second
+		maxRetries    = 120
+	)
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval)
+		}
+		afterDevices, err := ListBlockDevices()
+		if err != nil {
+			return "", fmt.Errorf("failed to list block devices on attempt %d: %w", i+1, err)
+		}
+		newDevices := SliceDifference(afterDevices, beforeDevices)
+		if len(newDevices) > 0 {
+			return "/dev/" + newDevices[0], nil
+		}
 	}
-	newDevices := SliceDifference(afterDevices, beforeDevices)
-	if len(newDevices) == 0 {
-		return "", fmt.Errorf("no new block device detected")
+	return "", fmt.Errorf("no new block device detected")
+}
+
+// DataDiskDevicePath returns the OCI paravirtualized device path for a data disk at the given index.
+func DataDiskDevicePath(index int) string {
+	const maxIndex = 31
+	if index < 0 || index > maxIndex {
+		panic(fmt.Sprintf("DataDiskDevicePath: index %d out of range [0, %d]", index, maxIndex))
 	}
-	return "/dev/" + newDevices[0], nil
+	var suffix string
+	if index <= 24 {
+		suffix = string(rune('b' + index))
+	} else {
+		suffix = "a" + string(rune('a'+index-25))
+	}
+	return "/dev/oracleoci/oraclevd" + suffix
+}
+
+// WaitForDevice waits for a specific block device to become available at the given path.
+func WaitForDevice(devicePath string) (string, error) {
+	const (
+		retryInterval = 5 * time.Second
+		maxRetries    = 120
+	)
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval)
+		}
+		if _, err := os.Stat(devicePath); err == nil {
+			return devicePath, nil
+		}
+	}
+	return "", fmt.Errorf("device %s not available after %d retries", devicePath, maxRetries)
 }
 
 // ConvertVHDToQCOW2 converts a VHD file to QCOW2 format. The VHD file is always kept for auditing purposes.
