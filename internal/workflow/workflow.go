@@ -62,7 +62,7 @@ func (m *Manager) Run(ctx context.Context) error {
 
 	// Execute the workflow handler
 	if err := m.handler.Execute(ctx); err != nil {
-		m.logger.Error(fmt.Sprintf("Workflow failed: %v", err))
+		m.logger.Errorf("Workflow failed: %v", err)
 		return err
 	}
 

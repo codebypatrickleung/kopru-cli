@@ -211,6 +211,36 @@ func TestOCIImageNameNaming(t *testing.T) {
 	}
 }
 
+func TestDataDiskParallelism(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected int
+	}{
+		{"Default value", "", 4},
+		{"Custom value", "8", 8},
+		{"Value of 1", "1", 1},
+		{"Zero clamped to 1", "0", 1},
+		{"Negative clamped to 1", "-3", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Clearenv()
+			if tt.envValue != "" {
+				os.Setenv("DATA_DISK_PARALLELISM", tt.envValue)
+			}
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Failed to load config: %v", err)
+			}
+			if cfg.DataDiskParallelism != tt.expected {
+				t.Errorf("Expected DataDiskParallelism to be %d, got %d", tt.expected, cfg.DataDiskParallelism)
+			}
+		})
+	}
+}
+
 func TestOCIImageEnableUEFI(t *testing.T) {
 	tests := []struct {
 		name          string

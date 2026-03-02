@@ -48,17 +48,3 @@ func (r *Registry) Get(sourcePlatform, targetPlatform string) (Handler, error) {
 	return handler, nil
 }
 
-// List returns all registered workflow handlers.
-func (r *Registry) List() []Handler {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	handlers := make([]Handler, 0, len(r.handlers))
-	for _, handler := range r.handlers {
-		handlers = append(handlers, handler)
-	}
-	return handlers
-}
-
-// DefaultRegistry is the global workflow registry.
-var DefaultRegistry = NewRegistry()

@@ -234,10 +234,10 @@ func GetComputeOSDiskSizeGB(qcow2File string) (int64, error) {
 // ExecuteOSConfigScript executes an OS configuration script from the scripts/os-config directory.
 func ExecuteOSConfigScript(imageFile, osType, sourcePlatform string, log *logger.Logger) error {
 	if sourcePlatform == "azure" && IsLinuxOS(osType) {
-		return executeScript(imageFile, "azure_to_oci.sh", log, true)
+		return executeScript(imageFile, "azure_to_oci.sh", log)
 	}
 	if sourcePlatform == "linux_image" {
-		return executeScript(imageFile, "linux_image_to_oci.sh", log, true)
+		return executeScript(imageFile, "linux_image_to_oci.sh", log)
 	}
 	log.Infof("Skipping OS configuration for OS type '%s'", osType)
 	return nil
@@ -258,37 +258,26 @@ func IsLinuxOS(operatingSystem string) bool {
 	return false
 }
 
-// executeScript executes a bash script with the image file path as argument.
-func executeScript(imageFile, scriptPath string, log *logger.Logger, isBuiltIn bool) error {
-	var fullScriptPath string
-	if isBuiltIn {
-		execPath, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to get executable path: %w", err)
-		}
-		fullScriptPath = filepath.Join(filepath.Dir(execPath), "scripts", "os-config", scriptPath)
-		if _, err := os.Stat(fullScriptPath); os.IsNotExist(err) {
-			return fmt.Errorf("OS configuration script not found: %s", fullScriptPath)
-		}
-		log.Infof("Executing OS configuration script: %s", fullScriptPath)
-	} else {
-		fullScriptPath = scriptPath
+// executeScript executes a built-in bash script from the scripts/os-config directory with the image file path as argument.
+func executeScript(imageFile, scriptPath string, log *logger.Logger) error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
 	}
-	
+	fullScriptPath := filepath.Join(filepath.Dir(execPath), "scripts", "os-config", scriptPath)
+	if _, err := os.Stat(fullScriptPath); os.IsNotExist(err) {
+		return fmt.Errorf("OS configuration script not found: %s", fullScriptPath)
+	}
+	log.Infof("Executing OS configuration script: %s", fullScriptPath)
+
 	// #nosec G302 -- script must be executable by owner
 	if err := os.Chmod(fullScriptPath, 0700); err != nil {
-		log.Warning(fmt.Sprintf("Could not make script executable: %v", err))
+		log.Warningf("Could not make script executable: %v", err)
 	}
 
 	env := append(os.Environ(), fmt.Sprintf("KOPRU_IMAGE_FILE=%s", imageFile))
-	var cmd *exec.Cmd
-	if isBuiltIn {
-		// #nosec G204 -- script is user-provided
-		cmd = exec.Command("sudo", fullScriptPath, imageFile)
-	} else {
-		// #nosec G204 -- script is user-provided
-		cmd = exec.Command(fullScriptPath, imageFile)
-	}
+	// #nosec G204 -- fullScriptPath is resolved from the application's own executable directory
+	cmd := exec.Command("sudo", fullScriptPath, imageFile)
 	cmd.Env = env
 
 	log.Infof("Starting script execution: %s", filepath.Base(fullScriptPath))

@@ -45,7 +45,7 @@ Kopru automatically migrates and reattaches data disks in OCI. For best results,
    Install Virtio drivers as described in the [Oracle documentation](https://docs.oracle.com/operating-systems/oracle-linux/kvm-virtio/kvm-virtio-InstallingtheOracleVirtIODriversforMicrosoftWindows.html).
 
 2. **Launch an Oracle Linux 9 Instance on OCI**  
-   See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/).
+   See [OCI documentation](https://docs.oracle.com/iaas/Content/Compute/Tasks/launchinginstance.htm). Apply security best practices and consider using [Cloud Guard](https://www.oracle.com/security/cloud-security/cloud-guard/). Refer to `quickstart` folder (`../quickstart/`) for an example deployment template.
 
 3. **Clone the Repository**
    ```bash
@@ -76,7 +76,7 @@ Kopru automatically migrates and reattaches data disks in OCI. For best results,
      ```bash
      export AZURE_TENANT_ID="your-tenant-id"
      export AZURE_CLIENT_ID="your-client-id"
-     export AZURE_CLIENT_SECRET="YOUR_PASSWORD"   # PLEASE CHANGE YOUR_PASSWORD TO A REAL PASSWORD!
+     export AZURE_CLIENT_SECRET="your-client-secret"   
      export AZURE_SUBSCRIPTION_ID="your-subscription-id"
      ```
 
@@ -128,15 +128,14 @@ Kopru generates a log file named `kopru-<timestamp>.log` in the current director
 
 ## Performance Considerations
 
-For simple VMs, migration may take 15–60 minutes. For larger VMs, consider the following optimisations:
+Migration time varies by VM size, disk count, and throughput. With the right optimisation, moving a 544 GB VM (approx. 512GB data + 32GB OS) took less than 45 minutes.
 
-- **Performance:**  
-  Disk throughput is a common bottleneck. Use high-performance disks and allocate sufficient OCPUs to increase available network bandwidth for block storage.
+Recommendations:
+- **Disk throughput:** Often the primary bottleneck. Use higher-performance block volumes and size the OCI instance appropriately (more OCPUs can increase available network bandwidth to storage).
+- **Parallelism:** Tune `DATA_DISK_PARALLELISM` to improve throughput for multi-disk VMs (validate against resource limits and stability).
+- **Infrastructure** The `quickstart` folder (`../quickstart/`) includes an example OCI VM deployment with Kopru installed and tuned for migration.  
 
-- **Data Import:**  
-  For faster, parallel disk operations, use the [concurrent-data-disk-import branch](https://github.com/codebypatrickleung/kopru-cli/tree/add-concurrent-data-disk-import) of the Kopru CLI.
-
-Contact the project maintainer for additional downtime optimisation techniques.
+For advance downtime optimisation, please reach out to me for further information.
 
 ## Post-Migration
 

@@ -3,10 +3,12 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/codebypatrickleung/kopru-cli/internal/cloud/azure"
 	"github.com/codebypatrickleung/kopru-cli/internal/cloud/oci"
@@ -19,18 +21,20 @@ import (
 
 // AzureToOCIHandler implements the workflow for migrating Compute instances from Azure to OCI.
 type AzureToOCIHandler struct {
-	config                *config.Config
-	logger                *logger.Logger
-	azureProvider         *azure.Provider
-	ociProvider           *oci.Provider
-	dataDiskSnapshotIDs   []string
-	dataDiskSnapshotNames []string
-	azureOSDiskSizeGB     int64
-	azureVMCPUs           int32
-	azureVMMemoryGB       int32
-	azureVMArchitecture   string
-	templateOutputDir     string
-	importedImageID       string
+	config              *config.Config
+	logger              *logger.Logger
+	azureProvider       *azure.Provider
+	ociProvider         *oci.Provider
+	dataDiskVolumeIDs   []string
+	dataDiskVolumeNames []string
+	azureOSDiskSizeGB   int64
+	azureVMCPUs         int32
+	azureVMMemoryGB     int32
+	azureVMArchitecture string
+	osExportDir         string
+	dataExportDir       string
+	templateOutputDir   string
+	importedImageID     string
 }
 
 func NewAzureToOCIHandler() *AzureToOCIHandler      { return &AzureToOCIHandler{} }
@@ -48,8 +52,11 @@ func (h *AzureToOCIHandler) Initialize(cfg *config.Config, log *logger.Logger) e
 		return fmt.Errorf("failed to initialize OCI provider: %w", err)
 	}
 
-	// Set template output directory based on Azure compute name
-	h.templateOutputDir = fmt.Sprintf("./%s-template-output", common.SanitizeName(cfg.AzureComputeName))
+	// Set export and template output directories based on Azure compute name
+	sanitizedName := common.SanitizeName(cfg.AzureComputeName)
+	h.osExportDir = fmt.Sprintf("./%s-os-disk-export", sanitizedName)
+	h.dataExportDir = fmt.Sprintf("./%s-data-disk-exports", sanitizedName)
+	h.templateOutputDir = fmt.Sprintf("./%s-template-output", sanitizedName)
 
 	return nil
 }
@@ -67,12 +74,12 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 	}{
 		{h.config.SkipExport, "Skipping OS disk export (SKIP_OS_EXPORT=true)", "OS disk export failed", h.exportOSDisk},
 	}
-	
+
 	// Run prerequisite checks
 	if err := h.runPrerequisites(ctx); err != nil {
 		return fmt.Errorf("prerequisite checks failed: %w", err)
 	}
-	
+
 	// Run steps with skip logic
 	for _, step := range steps {
 		if step.skip {
@@ -83,7 +90,7 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 			return fmt.Errorf("%s: %w", step.errMsg, err)
 		}
 	}
-	
+
 	if err := h.convertDisk(ctx); err != nil {
 		return fmt.Errorf("disk conversion failed: %w", err)
 	}
@@ -104,6 +111,9 @@ func (h *AzureToOCIHandler) Execute(ctx context.Context) error {
 	}
 	if err := h.generateTemplate(ctx); err != nil {
 		return fmt.Errorf("template generation failed: %w", err)
+	}
+	if err := h.waitForImageImportCompletion(ctx); err != nil {
+		return fmt.Errorf("failed waiting for image import: %w", err)
 	}
 
 	if !h.config.SkipTemplateDeploy {
@@ -139,6 +149,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Infof("OCI Image UEFI Enabled: %t", h.config.OCIImageEnableUEFI)
 	h.logger.Infof("Template Output Dir: %s", h.templateOutputDir)
 	h.logger.Infof("SSH Key File Path: %s", h.config.SSHKeyFilePath)
+	h.logger.Infof("Data Disk Parallelism: %d", h.config.DataDiskParallelism)
 	h.logger.Step(2, "Running Prerequisite Checks")
 	for _, tool := range []string{"qemu-img", "virt-customize"} {
 		if err := common.CheckCommand(tool); err != nil {
@@ -148,7 +159,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	availableBytes, err := common.GetAvailableDiskSpace(".", common.MinDiskSpaceGB)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Disk space check: %v", err))
+		h.logger.Warningf("Disk space check: %v", err)
 	} else {
 		h.logger.Successf("✓ Available disk space: %d GB", availableBytes/(1024*1024*1024))
 	}
@@ -164,7 +175,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	h.logger.Successf("✓ Compute instance OS type: %s", osType)
 	cpus, memoryGB, err := h.azureProvider.GetComputeCPUAndMemory(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Failed to get VM CPU/memory configuration: %v", err))
+		h.logger.Warningf("Failed to get VM CPU/memory configuration: %v", err)
 		h.logger.Warning("Will use default configuration (1 OCPU, 12 GB) for OCI instance")
 		h.azureVMCPUs = 0
 		h.azureVMMemoryGB = 0
@@ -175,7 +186,7 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 	}
 	architecture, err := h.azureProvider.GetComputeArchitecture(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
-		h.logger.Warning(fmt.Sprintf("Failed to get VM architecture: %v", err))
+		h.logger.Warningf("Failed to get VM architecture: %v", err)
 		h.logger.Warning("Will assume x86_64 architecture for OCI instance")
 		h.azureVMArchitecture = "x86_64"
 	} else {
@@ -242,17 +253,16 @@ func (h *AzureToOCIHandler) runPrerequisites(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) exportOSDisk(ctx context.Context) error {
 	h.logger.Step(3, "Exporting OS Disk")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	if err := common.EnsureDir(exportDir); err != nil {
+	if err := common.EnsureDir(h.osExportDir); err != nil {
 		return fmt.Errorf("failed to create export directory: %w", err)
 	}
-	h.logger.Infof("Export directory: %s", exportDir)
+	h.logger.Infof("Export directory: %s", h.osExportDir)
 	osDiskName, err := h.azureProvider.GetComputeOSDiskName(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		return fmt.Errorf("failed to get OS disk name: %w", err)
 	}
 	h.logger.Infof("OS disk name: %s", osDiskName)
-	vhdFile, err := h.azureProvider.ExportAzureDisk(ctx, osDiskName, h.config.AzureResourceGroup, exportDir)
+	vhdFile, err := h.azureProvider.ExportAzureDisk(ctx, osDiskName, h.config.AzureResourceGroup, h.osExportDir)
 	if err != nil {
 		return fmt.Errorf("failed to export OS disk: %w", err)
 	}
@@ -262,8 +272,7 @@ func (h *AzureToOCIHandler) exportOSDisk(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) convertDisk(ctx context.Context) error {
 	h.logger.Step(4, "Converting VHD to QCOW2")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	vhdFile, err := common.FindDiskFile(exportDir, ".vhd")
+	vhdFile, err := common.FindDiskFile(h.osExportDir, ".vhd")
 	if err != nil {
 		return fmt.Errorf("failed to find VHD file: %w", err)
 	}
@@ -279,8 +288,7 @@ func (h *AzureToOCIHandler) convertDisk(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 	h.logger.Step(5, "Configuring Image for OCI")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -300,8 +308,7 @@ func (h *AzureToOCIHandler) configureImage(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) uploadImage(ctx context.Context) error {
 	h.logger.Step(6, "Uploading Image to OCI")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 	if err != nil {
 		return fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -330,7 +337,7 @@ func (h *AzureToOCIHandler) uploadImage(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) importOSImage(ctx context.Context) error {
 	h.logger.Step(7, "Importing OS Image in OCI")
-	
+
 	namespace, objectName, err := h.getImageImportDetails(ctx)
 	if err != nil {
 		return err
@@ -357,17 +364,16 @@ func (h *AzureToOCIHandler) importOSImage(ctx context.Context) error {
 	h.importedImageID = imageID
 	h.logger.Successf("OS image import started with ID: %s", imageID)
 	h.logger.Info("Continuing with data disk operations while image imports in background...")
-	
+
 	return nil
 }
 
 func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 	h.logger.Step(8, "Exporting Data Disks")
-	exportDir := fmt.Sprintf("./%s-data-disk-exports", common.SanitizeName(h.config.AzureComputeName))
-	if err := common.EnsureDir(exportDir); err != nil {
+	if err := common.EnsureDir(h.dataExportDir); err != nil {
 		return fmt.Errorf("failed to create export directory: %w", err)
 	}
-	h.logger.Infof("Export directory: %s", exportDir)
+	h.logger.Infof("Export directory: %s", h.dataExportDir)
 	diskNames, err := h.azureProvider.GetComputeDataDiskNames(ctx, h.config.AzureResourceGroup, h.config.AzureComputeName)
 	if err != nil {
 		return fmt.Errorf("failed to get data disk names: %w", err)
@@ -377,28 +383,40 @@ func (h *AzureToOCIHandler) exportDataDisks(ctx context.Context) error {
 		return nil
 	}
 	h.logger.Infof("Found %d data disk(s) to export", len(diskNames))
-	for _, diskName := range diskNames {
-		h.logger.Infof("Exporting data disk: %s", diskName)
-		_, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, exportDir)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to export data disk %s: %v", diskName, err))
-			continue
-		}
-		h.logger.Successf("✓ Exported: %s", diskName)
+	h.logger.Info("Exporting all data disks in parallel...")
+	exportErrors := make([]error, len(diskNames))
+	sem := make(chan struct{}, h.config.DataDiskParallelism)
+	var wg sync.WaitGroup
+	for i, diskName := range diskNames {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			h.logger.Infof("Exporting data disk: %s", diskName)
+			if _, err := h.azureProvider.ExportAzureDisk(ctx, diskName, h.config.AzureResourceGroup, h.dataExportDir); err != nil {
+				exportErrors[i] = err
+				h.logger.Warningf("Failed to export data disk %s: %v", diskName, err)
+				return
+			}
+			h.logger.Successf("✓ Exported: %s", diskName)
+		}()
 	}
+	wg.Wait()
 	h.logger.Success("Data disks exported")
-	return nil
+	return errors.Join(exportErrors...)
 }
 
 func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Step(9, "Importing Data Disks")
-	h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames = []string{}, []string{}
-	exportDir := fmt.Sprintf("./%s-data-disk-exports", common.SanitizeName(h.config.AzureComputeName))
-	if _, err := os.Stat(exportDir); os.IsNotExist(err) {
+	h.dataDiskVolumeIDs, h.dataDiskVolumeNames = []string{}, []string{}
+	if _, err := os.Stat(h.dataExportDir); os.IsNotExist(err) {
 		h.logger.Info("No data disk export directory found - skipping data disk import")
 		return nil
 	}
-	vhdFiles, err := filepath.Glob(filepath.Join(exportDir, "*.vhd"))
+	vhdFiles, err := filepath.Glob(filepath.Join(h.dataExportDir, "*.vhd"))
 	if err != nil {
 		return fmt.Errorf("failed to find VHD files: %w", err)
 	}
@@ -419,138 +437,160 @@ func (h *AzureToOCIHandler) importDataDisks(ctx context.Context) error {
 	h.logger.Infof("Local instance: %s", localInstanceID)
 	h.logger.Infof("Availability domain: %s", localAvailabilityDomain)
 
-	var (
-		createdVolumes []string
-		snapshotIDs    []string
-		snapshotNames  []string
-		failedCount    int
-	)
-
-	for _, vhdFile := range vhdFiles {
-		h.logger.Info("=========================================")
-		h.logger.Infof("Processing: %s", filepath.Base(vhdFile))
-		h.logger.Info("=========================================")
-
-		baseDiskName := strings.TrimSuffix(filepath.Base(vhdFile), ".vhd")
-		rawFile := strings.TrimSuffix(vhdFile, ".vhd") + ".raw"
-		h.logger.Infof("Converting VHD to RAW format: %s", filepath.Base(rawFile))
-		if err := common.ConvertVHDToRAW(vhdFile, rawFile); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to convert VHD to RAW: %v", err))
-			failedCount++
-			continue
+	n := len(vhdFiles)
+	type diskInfo struct {
+		vhdFile      string
+		rawFile      string
+		baseDiskName string
+	}
+	disks := make([]diskInfo, n)
+	for i, vhdFile := range vhdFiles {
+		disks[i] = diskInfo{
+			vhdFile:      vhdFile,
+			rawFile:      strings.TrimSuffix(vhdFile, ".vhd") + ".raw",
+			baseDiskName: strings.TrimSuffix(filepath.Base(vhdFile), ".vhd"),
 		}
-		h.logger.Success("VHD converted to RAW format")
-
-		diskSizeGB, err := common.GetFileSizeGB(rawFile)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to get disk size: %v", err))
-			failedCount++
-			continue
-		}
-
-		h.logger.Infof("Creating OCI volume of size %d GB...", diskSizeGB)
-		volumeName := fmt.Sprintf("bv-%s", baseDiskName)
-		h.logger.Infof("Volume name: %s", volumeName)
-
-		volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to create OCI volume: %v", err))
-			failedCount++
-			continue
-		}
-		h.logger.Successf("Created volume: %s", volumeID)
-
-		createdVolumes = append(createdVolumes, volumeID)
-
-		beforeDevices, err := common.ListBlockDevices()
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to list block devices: %v", err))
-			failedCount++
-			continue
-		}
-
-		h.logger.Info("Attaching volume to local instance...")
-		attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to attach volume: %v", err))
-			failedCount++
-			continue
-		}
-		h.logger.Infof("Volume attached (attachment: %s)", attachmentID)
-
-		attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Could not detect attached device: %v", err))
-			if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
-			}
-			failedCount++
-			continue
-		}
-		h.logger.Infof("Attached device: %s", attachedDevice)
-
-		h.logger.Infof("Copying data from RAW file to %s...", attachedDevice)
-		h.logger.Info("  This may take a while depending on disk size...")
-		if err := common.CopyDataWithDD(rawFile, attachedDevice); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to copy data: %v", err))
-			if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
-				h.logger.Warning(fmt.Sprintf("Failed to detach volume during cleanup: %v", detachErr))
-			}
-			failedCount++
-			continue
-		}
-		h.logger.Success("Data copy completed")
-
-		h.logger.Info("Detaching volume...")
-		if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to detach volume: %v", err))
-		} else {
-			h.logger.Info("Volume detached")
-		}
-
-		snapshotName := fmt.Sprintf("ss-%s", baseDiskName)
-		h.logger.Infof("Creating snapshot: %s...", snapshotName)
-		snapshotID, err := h.ociProvider.CreateVolumeSnapshot(ctx, volumeID, snapshotName)
-		if err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to create snapshot: %v", err))
-			failedCount++
-			continue
-		}
-		h.logger.Successf("Created snapshot: %s", snapshotID)
-
-		snapshotIDs = append(snapshotIDs, snapshotID)
-		snapshotNames = append(snapshotNames, snapshotName)
-
-		h.logger.Successf("Processed: %s", filepath.Base(vhdFile))
 	}
 
-	h.dataDiskSnapshotIDs = snapshotIDs
-	h.dataDiskSnapshotNames = snapshotNames
+	// Phase 1: Convert all VHDs to RAW format in parallel
+	h.logger.Info("Phase 1: Converting VHD files to RAW format in parallel...")
+	convErrors := make([]error, n)
+	sem := make(chan struct{}, h.config.DataDiskParallelism)
+	var wg sync.WaitGroup
+	for i, disk := range disks {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			h.logger.Infof("[%s] Converting VHD to RAW format...", disk.baseDiskName)
+			if err := common.ConvertVHDToRAW(disk.vhdFile, disk.rawFile); err != nil {
+				convErrors[i] = err
+				h.logger.Warningf("[%s] Failed to convert VHD to RAW: %v", disk.baseDiskName, err)
+			} else {
+				h.logger.Successf("[%s] VHD converted to RAW format", disk.baseDiskName)
+			}
+		}()
+	}
+	wg.Wait()
 
-	h.logger.Info("Cleaning up temporary block volumes...")
-	for _, volumeID := range createdVolumes {
-		h.logger.Infof("Deleting volume %s...", volumeID)
-		if err := h.ociProvider.DeleteVolume(ctx, volumeID); err != nil {
-			h.logger.Warning(fmt.Sprintf("Failed to delete volume %s: %v", volumeID, err))
-		} else {
-			h.logger.Success("Volume deleted")
+	// Phase 2: Copy data to OCI block volumes in parallel.
+	h.logger.Info("Phase 2: Copying data to OCI block volumes in parallel...")
+	volumeIDs := make([]string, n)
+	volumeNames := make([]string, n)
+	ddErrors := make([]error, n)
+	var attachMu sync.Mutex
+	for i, disk := range disks {
+		if convErrors[i] != nil {
+			ddErrors[i] = fmt.Errorf("skipping due to conversion failure: %w", convErrors[i])
+			continue
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			diskSizeGB, err := common.GetFileSizeGB(disk.rawFile)
+			if err != nil {
+				ddErrors[i] = fmt.Errorf("failed to get disk size: %w", err)
+				h.logger.Warningf("[%s] Failed to get disk size: %v", disk.baseDiskName, err)
+				return
+			}
+			volumeName := fmt.Sprintf("bv-%s", disk.baseDiskName)
+			h.logger.Infof("[%s] Creating OCI volume '%s' of size %d GB...", disk.baseDiskName, volumeName, diskSizeGB)
+			volumeID, err := h.ociProvider.CreateBlockVolume(ctx, h.config.OCICompartmentID, localAvailabilityDomain, volumeName, diskSizeGB)
+			if err != nil {
+				ddErrors[i] = fmt.Errorf("failed to create OCI volume: %w", err)
+				h.logger.Warningf("[%s] Failed to create OCI volume: %v", disk.baseDiskName, err)
+				return
+			}
+			h.logger.Successf("[%s] Created volume: %s", disk.baseDiskName, volumeID)
+			volumeIDs[i] = volumeID
+			volumeNames[i] = volumeName
+
+			// Serialize attach+detect to reliably identify the newly attached device
+			attachMu.Lock()
+			beforeDevices, err := common.ListBlockDevices()
+			if err != nil {
+				attachMu.Unlock()
+				ddErrors[i] = fmt.Errorf("failed to list block devices: %w", err)
+				h.logger.Warningf("[%s] Failed to list block devices: %v", disk.baseDiskName, err)
+				return
+			}
+			h.logger.Infof("[%s] Attaching volume to local instance...", disk.baseDiskName)
+			attachmentID, err := h.ociProvider.AttachVolume(ctx, localInstanceID, volumeID)
+			if err != nil {
+				attachMu.Unlock()
+				ddErrors[i] = fmt.Errorf("failed to attach volume: %w", err)
+				h.logger.Warningf("[%s] Failed to attach volume: %v", disk.baseDiskName, err)
+				return
+			}
+			h.logger.Infof("[%s] Volume attached (attachment: %s)", disk.baseDiskName, attachmentID)
+			attachedDevice, err := common.DetectNewBlockDevice(beforeDevices)
+			attachMu.Unlock()
+			if err != nil {
+				h.logger.Warningf("[%s] Could not detect attached device: %v", disk.baseDiskName, err)
+				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
+					h.logger.Warningf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr)
+				}
+				ddErrors[i] = fmt.Errorf("failed to detect attached device: %w", err)
+				return
+			}
+			h.logger.Infof("[%s] Attached device: %s", disk.baseDiskName, attachedDevice)
+
+			h.logger.Infof("[%s] Copying data from RAW file to %s (this may take a while)...", disk.baseDiskName, attachedDevice)
+			if err := common.CopyDataWithDD(disk.rawFile, attachedDevice); err != nil {
+				h.logger.Warningf("[%s] Failed to copy data: %v", disk.baseDiskName, err)
+				if detachErr := h.ociProvider.DetachVolume(ctx, attachmentID); detachErr != nil {
+					h.logger.Warningf("[%s] Failed to detach volume during cleanup: %v", disk.baseDiskName, detachErr)
+				}
+				ddErrors[i] = fmt.Errorf("failed to copy data with dd: %w", err)
+				return
+			}
+			h.logger.Successf("[%s] Data copy completed", disk.baseDiskName)
+
+			h.logger.Infof("[%s] Detaching volume...", disk.baseDiskName)
+			if err := h.ociProvider.DetachVolume(ctx, attachmentID); err != nil {
+				h.logger.Warningf("[%s] Failed to detach volume: %v", disk.baseDiskName, err)
+			} else {
+				h.logger.Infof("[%s] Volume detached", disk.baseDiskName)
+			}
+		}()
+	}
+	wg.Wait()
+
+	var failedCount int
+	for i := range disks {
+		if convErrors[i] != nil || ddErrors[i] != nil {
+			failedCount++
+		}
+		if volumeIDs[i] != "" {
+			h.dataDiskVolumeIDs = append(h.dataDiskVolumeIDs, volumeIDs[i])
+			h.dataDiskVolumeNames = append(h.dataDiskVolumeNames, volumeNames[i])
 		}
 	}
+
 	h.logger.Info("=========================================")
 	h.logger.Success("Data disk import completed")
-	h.logger.Infof("  Snapshots created: %d", len(h.dataDiskSnapshotIDs))
+	h.logger.Infof("  Volumes imported: %d", len(h.dataDiskVolumeIDs))
 	h.logger.Infof("  Failed: %d", failedCount)
-	if len(h.dataDiskSnapshotIDs) > 0 {
-		h.logger.Infof("  Snapshot OCIDs: %v", h.dataDiskSnapshotIDs)
-		h.logger.Infof("  Snapshot Names: %v", h.dataDiskSnapshotNames)
+	if len(h.dataDiskVolumeIDs) > 0 {
+		h.logger.Infof("  Volume OCIDs: %v", h.dataDiskVolumeIDs)
+		h.logger.Infof("  Volume Names: %v", h.dataDiskVolumeNames)
 	}
 	h.logger.Info("=========================================")
+	if failedCount > 0 {
+		return fmt.Errorf("%d of %d data disk(s) failed to import", failedCount, n)
+	}
 	return nil
 }
 
 func (h *AzureToOCIHandler) getImageImportDetails(ctx context.Context) (namespace, objectName string, err error) {
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-	qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+	qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find QCOW2 file: %w", err)
 	}
@@ -566,8 +606,7 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 	h.logger.Step(10, "Generating Template")
 	if h.azureOSDiskSizeGB == 0 {
 		h.logger.Info("Reading OS disk size from QCOW2 file...")
-		exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
-		qcow2File, err := common.FindDiskFile(exportDir, ".qcow2")
+		qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2")
 		if err != nil {
 			return fmt.Errorf("failed to find QCOW2 file: %w", err)
 		}
@@ -584,7 +623,7 @@ func (h *AzureToOCIHandler) generateTemplate(ctx context.Context) error {
 	}
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, h.importedImageID,
-		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
+		h.dataDiskVolumeIDs, h.dataDiskVolumeNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
 		h.templateOutputDir,
 	)
@@ -608,14 +647,10 @@ func (h *AzureToOCIHandler) waitForImageImportCompletion(ctx context.Context) er
 
 func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 	h.logger.Step(11, "Deploying the template")
-	
-	if err := h.waitForImageImportCompletion(ctx); err != nil {
-		return fmt.Errorf("failed waiting for image import: %w", err)
-	}
-	
+
 	tfGen := template.NewOCIGenerator(
 		h.config, h.logger, h.importedImageID,
-		h.dataDiskSnapshotIDs, h.dataDiskSnapshotNames,
+		h.dataDiskVolumeIDs, h.dataDiskVolumeNames,
 		h.azureOSDiskSizeGB, h.azureVMCPUs, h.azureVMMemoryGB, h.azureVMArchitecture,
 		h.templateOutputDir,
 	)
@@ -624,12 +659,11 @@ func (h *AzureToOCIHandler) deployTemplate(ctx context.Context) error {
 
 func (h *AzureToOCIHandler) verifyWorkflow(ctx context.Context) error {
 	h.logger.Step(12, "Verifying Workflow")
-	exportDir := fmt.Sprintf("./%s-os-disk-export", common.SanitizeName(h.config.AzureComputeName))
 	if !h.config.SkipExport {
-		if vhdFile, err := common.FindDiskFile(exportDir, ".vhd"); err == nil {
+		if vhdFile, err := common.FindDiskFile(h.osExportDir, ".vhd"); err == nil {
 			h.logger.Successf("✓ VHD file exists: %s", filepath.Base(vhdFile))
 		}
-		if qcow2File, err := common.FindDiskFile(exportDir, ".qcow2"); err == nil {
+		if qcow2File, err := common.FindDiskFile(h.osExportDir, ".qcow2"); err == nil {
 			h.logger.Successf("✓ QCOW2 file exists: %s", filepath.Base(qcow2File))
 		}
 	}

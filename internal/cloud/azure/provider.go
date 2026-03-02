@@ -223,10 +223,10 @@ func (p *Provider) ExportAzureDisk(ctx context.Context, diskName, resourceGroup,
 	defer func() {
 		p.logger.Info("Cleaning up snapshot...")
 		if err := p.RevokeSnapshotAccess(ctx, resourceGroup, snapshotName); err != nil {
-			p.logger.Warning(fmt.Sprintf("Failed to revoke access to snapshot: %v", err))
+			p.logger.Warningf("Failed to revoke access to snapshot: %v", err)
 		}
 		if err := p.DeleteSnapshot(ctx, resourceGroup, snapshotName); err != nil {
-			p.logger.Warning(fmt.Sprintf("Failed to delete snapshot %s - manual cleanup may be required", snapshotName))
+			p.logger.Warningf("Failed to delete snapshot %s - manual cleanup may be required", snapshotName)
 		} else {
 			p.logger.Successf("✓ Snapshot deleted: %s", snapshotName)
 		}

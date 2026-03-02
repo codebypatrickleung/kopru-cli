@@ -35,31 +35,31 @@ const defaultImageCapabilitySchemaVersion = "1"
 
 // OCIGenerator handles template generation for OCI.
 type OCIGenerator struct {
-	config                *config.Config
-	logger                *logger.Logger
-	importedImageID       string
-	dataDiskSnapshotIDs   []string
-	dataDiskSnapshotNames []string
-	bootVolumeSizeGB      int64
-	vmCPUs                int32
-	vmMemoryGB            int32
-	vmArchitecture        string
-	templateOutputDir     string
+	config              *config.Config
+	logger              *logger.Logger
+	importedImageID     string
+	dataDiskVolumeIDs   []string
+	dataDiskVolumeNames []string
+	bootVolumeSizeGB    int64
+	vmCPUs              int32
+	vmMemoryGB          int32
+	vmArchitecture      string
+	templateOutputDir   string
 }
 
 // NewOCIGenerator creates a new OCI template generator.
-func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskSnapshotIDs, dataDiskSnapshotNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string, templateOutputDir string) *OCIGenerator {
+func NewOCIGenerator(cfg *config.Config, log *logger.Logger, importedImageID string, dataDiskVolumeIDs, dataDiskVolumeNames []string, bootVolumeSizeGB int64, vmCPUs int32, vmMemoryGB int32, vmArchitecture string, templateOutputDir string) *OCIGenerator {
 	return &OCIGenerator{
-		config:                cfg,
-		logger:                log,
-		importedImageID:       importedImageID,
-		dataDiskSnapshotIDs:   dataDiskSnapshotIDs,
-		dataDiskSnapshotNames: dataDiskSnapshotNames,
-		bootVolumeSizeGB:      bootVolumeSizeGB,
-		vmCPUs:                vmCPUs,
-		vmMemoryGB:            vmMemoryGB,
-		vmArchitecture:        vmArchitecture,
-		templateOutputDir:     templateOutputDir,
+		config:              cfg,
+		logger:              log,
+		importedImageID:     importedImageID,
+		dataDiskVolumeIDs:   dataDiskVolumeIDs,
+		dataDiskVolumeNames: dataDiskVolumeNames,
+		bootVolumeSizeGB:    bootVolumeSizeGB,
+		vmCPUs:              vmCPUs,
+		vmMemoryGB:          vmMemoryGB,
+		vmArchitecture:      vmArchitecture,
+		templateOutputDir:   templateOutputDir,
 	}
 }
 
@@ -95,7 +95,7 @@ func (g *OCIGenerator) selectOCIShape() string {
 // calculateOCIResources determines the appropriate OCPU and memory configuration for OCI.
 func (g *OCIGenerator) calculateOCIResources() (ocpus int32, memoryGB int32) {
 	if g.vmCPUs == 0 || g.vmMemoryGB == 0 {
-		g.logger.Warning(fmt.Sprintf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB))
+		g.logger.Warningf("No source VM configuration available, using default: %d OCPU, %d GB memory", DefaultOCPUs, DefaultMemoryGB)
 		return DefaultOCPUs, DefaultMemoryGB
 	}
 
@@ -259,8 +259,8 @@ variable "region" {
   type        = string
 }
 
-variable "data_disk_snapshot_ids" {
-  description = "List of block volume backup (snapshot) OCIDs to restore as data disks"
+variable "data_disk_volume_ids" {
+  description = "List of existing block volume OCIDs to attach as data disks"
   type        = list(string)
   default     = []
 }
@@ -302,9 +302,9 @@ func (g *OCIGenerator) generateMainTF() error {
 # --------------------------------------------------------------------------------------------
 
 locals {
-  data_volume_names = [
-	for idx in range(length(var.data_disk_snapshot_ids)) :
-	length(var.data_disk_names) > idx ? var.data_disk_names[idx] : "restored-data-disk-${idx}"
+  data_attachment_names = [
+	for idx in range(length(var.data_disk_volume_ids)) :
+	length(var.data_disk_names) > idx ? "attachment-${var.data_disk_names[idx]}" : "attachment-data-disk-${idx}"
   ]
 }
 
@@ -407,24 +407,12 @@ resource "oci_core_shape_management" "arm64_shape_support" {
   freeform_tags = var.freeform_tags
 }
 
-resource "oci_core_volume" "data_volumes" {
-  count = length(var.data_disk_snapshot_ids)
-  compartment_id      = var.compartment_id
-  availability_domain = data.oci_identity_availability_domain.ad.name
-  display_name        = local.data_volume_names[count.index]
-  source_details {
-	type = "volumeBackup"
-	id   = var.data_disk_snapshot_ids[count.index]
-  }
-  freeform_tags = var.freeform_tags
-}
-
 resource "oci_core_volume_attachment" "data_volume_attachments" {
-  count = length(var.data_disk_snapshot_ids)
+  count = length(var.data_disk_volume_ids)
   attachment_type = "paravirtualized"
   instance_id     = oci_core_instance.kopru_instance.id
-  volume_id       = oci_core_volume.data_volumes[count.index].id
-  display_name    = "attachment-${local.data_volume_names[count.index]}"
+  volume_id       = var.data_disk_volume_ids[count.index]
+  display_name    = local.data_attachment_names[count.index]
   depends_on      = [oci_core_instance.kopru_instance]
 }
 `)
@@ -462,11 +450,6 @@ output "instance_private_ip" {
   value       = oci_core_instance.kopru_instance.private_ip
 }
 
-output "data_volume_ids" {
-  description = "The OCIDs of the attached data volumes"
-  value       = oci_core_volume.data_volumes[*].id
-}
-
 output "data_volume_attachment_ids" {
   description = "The OCIDs of the volume attachments"
   value       = oci_core_volume_attachment.data_volume_attachments[*].id
@@ -490,8 +473,8 @@ func (g *OCIGenerator) generateTFVars() error {
 		ad = DefaultAvailabilityDomain
 	}
 
-	snapshotIDsList := formatTemplateList(g.dataDiskSnapshotIDs)
-	snapshotNamesList := formatTemplateList(g.dataDiskSnapshotNames)
+	volumeIDsList := formatTemplateList(g.dataDiskVolumeIDs)
+	volumeNamesList := formatTemplateList(g.dataDiskVolumeNames)
 
 	// Calculate boot volume size: max of 50GB or the source Azure VM boot disk size
 	bootVolumeSize := int64(50)
@@ -538,8 +521,8 @@ boot_volume_size_in_gbs = %d
 
 region = "%s"
 
-data_disk_snapshot_ids = %s
-data_disk_names        = %s
+data_disk_volume_ids = %s
+data_disk_names      = %s
 
 freeform_tags = {
   "created-by"    = "kopru"
@@ -559,8 +542,8 @@ freeform_tags = {
 		memoryGB,
 		bootVolumeSize,
 		g.config.OCIRegion,
-		snapshotIDsList,
-		snapshotNamesList,
+		volumeIDsList,
+		volumeNamesList,
 		g.config.OCIImageName,
 		g.vmCPUs,
 		g.vmMemoryGB,

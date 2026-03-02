@@ -27,11 +27,11 @@ func TestBootVolumeSizeCalculation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			cfg := &config.Config{
-				OCICompartmentID:  "test-compartment",
-				OCISubnetID:       "test-subnet",
-				OCIRegion:         "us-ashburn-1",
-				OCIInstanceName:   "test-instance",
-				OCIImageName:      "test-image",
+				OCICompartmentID: "test-compartment",
+				OCISubnetID:      "test-subnet",
+				OCIRegion:        "us-ashburn-1",
+				OCIInstanceName:  "test-instance",
+				OCIImageName:     "test-image",
 			}
 			log := logger.New(false)
 			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, tt.azureDiskSizeGB, 0, 0, "x86_64", tmpDir)
@@ -159,11 +159,11 @@ func TestCPUAndMemoryConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			cfg := &config.Config{
-				OCICompartmentID:  "test-compartment",
-				OCISubnetID:       "test-subnet",
-				OCIRegion:         "us-ashburn-1",
-				OCIInstanceName:   "test-instance",
-				OCIImageName:      "test-image",
+				OCICompartmentID: "test-compartment",
+				OCISubnetID:      "test-subnet",
+				OCIRegion:        "us-ashburn-1",
+				OCIInstanceName:  "test-instance",
+				OCIImageName:     "test-image",
 			}
 			log := logger.New(false)
 			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, tt.vmCPUs, tt.vmMemoryGB, tt.vmArchitecture, tmpDir)
@@ -231,11 +231,11 @@ func TestArchitectureTagging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			cfg := &config.Config{
-				OCICompartmentID:  "test-compartment",
-				OCISubnetID:       "test-subnet",
-				OCIRegion:         "us-ashburn-1",
-				OCIInstanceName:   "test-instance",
-				OCIImageName:      "test-image",
+				OCICompartmentID: "test-compartment",
+				OCISubnetID:      "test-subnet",
+				OCIRegion:        "us-ashburn-1",
+				OCIInstanceName:  "test-instance",
+				OCIImageName:     "test-image",
 			}
 			log := logger.New(false)
 			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 2, 8, tt.vmArchitecture, tmpDir)
@@ -368,11 +368,11 @@ func TestARM64ShapeManagementGeneration(t *testing.T) {
 func TestSubnetPublicIPAssignment(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
-		OCICompartmentID:  "test-compartment",
-		OCISubnetID:       "test-subnet",
-		OCIRegion:         "us-ashburn-1",
-		OCIInstanceName:   "test-instance",
-		OCIImageName:      "test-image",
+		OCICompartmentID: "test-compartment",
+		OCISubnetID:      "test-subnet",
+		OCIRegion:        "us-ashburn-1",
+		OCIInstanceName:  "test-instance",
+		OCIImageName:     "test-image",
 	}
 	log := logger.New(false)
 	gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 2, 8, "x86_64", tmpDir)
@@ -406,4 +406,3 @@ func TestSubnetPublicIPAssignment(t *testing.T) {
 
 	t.Log("✓ Subnet data source and assign_public_ip logic correctly configured in main.tf")
 }
-
