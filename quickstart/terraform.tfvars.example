@@ -8,6 +8,9 @@
 # REQUIRED VARIABLES
 # ------------------------------------------------------------------------------
 
+# The OCID of the tenancy
+tenancy_ocid = "ocid1.tenancy.oc1..."
+
 # The OCID of the compartment where resources will be created
 compartment_ocid = "ocid1.compartment.oc1..."
 

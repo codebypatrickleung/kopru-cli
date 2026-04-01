@@ -48,7 +48,7 @@ func (h *AzureToOCIHandler) Initialize(cfg *config.Config, log *logger.Logger) e
 	if h.azureProvider, err = azure.NewProvider(cfg.AzureSubscriptionID, log); err != nil {
 		return fmt.Errorf("failed to initialize Azure provider: %w", err)
 	}
-	if h.ociProvider, err = oci.NewProvider(cfg.OCIRegion, log); err != nil {
+	if h.ociProvider, err = oci.NewProvider(cfg.OCIRegion, cfg.OCIAuthType, log); err != nil {
 		return fmt.Errorf("failed to initialize OCI provider: %w", err)
 	}
 

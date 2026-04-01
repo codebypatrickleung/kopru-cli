@@ -67,8 +67,37 @@ func TestConfigValidate(t *testing.T) {
 				OCICompartmentID:   "ocid1.compartment.test",
 				OCISubnetID:        "ocid1.subnet.test",
 				OCIRegion:          "us-ashburn-1",
+				OCIAuthType:        OCIAuthTypeAPIKey,
 			},
 			expectError: false,
+		},
+		{
+			name: "valid instance principal auth type",
+			config: &Config{
+				SourcePlatform:     "azure",
+				TargetPlatform:     "oci",
+				AzureComputeName:   "test-vm",
+				AzureResourceGroup: "test-rg",
+				OCICompartmentID:   "ocid1.compartment.test",
+				OCISubnetID:        "ocid1.subnet.test",
+				OCIRegion:          "us-ashburn-1",
+				OCIAuthType:        OCIAuthTypeInstancePrincipal,
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid auth type",
+			config: &Config{
+				SourcePlatform:     "azure",
+				TargetPlatform:     "oci",
+				AzureComputeName:   "test-vm",
+				AzureResourceGroup: "test-rg",
+				OCICompartmentID:   "ocid1.compartment.test",
+				OCISubnetID:        "ocid1.subnet.test",
+				OCIRegion:          "us-ashburn-1",
+				OCIAuthType:        "invalid",
+			},
+			expectError: true,
 		},
 		{
 			name: "missing Azure Compute name",
@@ -142,6 +171,9 @@ func TestConfigDefaults(t *testing.T) {
 	}
 	if cfg.OCIRegion != "" {
 		t.Errorf("Expected OCIRegion to be empty (no default), got '%s'", cfg.OCIRegion)
+	}
+	if cfg.OCIAuthType != OCIAuthTypeAPIKey {
+		t.Errorf("Expected default OCIAuthType to be %q, got '%s'", OCIAuthTypeAPIKey, cfg.OCIAuthType)
 	}
 }
 
@@ -266,6 +298,34 @@ func TestOCIImageEnableUEFI(t *testing.T) {
 			}
 			if cfg.OCIImageEnableUEFI != tt.expectedValue {
 				t.Errorf("Expected OCIImageEnableUEFI to be %v, got %v", tt.expectedValue, cfg.OCIImageEnableUEFI)
+			}
+		})
+	}
+}
+
+func TestOCIAuthType(t *testing.T) {
+	tests := []struct {
+		name          string
+		envValue      string
+		expectedValue string
+	}{
+		{"Default to api_key when not set", "", OCIAuthTypeAPIKey},
+		{"Explicit api_key", OCIAuthTypeAPIKey, OCIAuthTypeAPIKey},
+		{"Instance principal", OCIAuthTypeInstancePrincipal, OCIAuthTypeInstancePrincipal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Clearenv()
+			if tt.envValue != "" {
+				os.Setenv("OCI_AUTH_TYPE", tt.envValue)
+			}
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Failed to load config: %v", err)
+			}
+			if cfg.OCIAuthType != tt.expectedValue {
+				t.Errorf("Expected OCIAuthType to be %q, got %q", tt.expectedValue, cfg.OCIAuthType)
 			}
 		})
 	}

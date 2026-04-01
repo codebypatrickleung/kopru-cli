@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codebypatrickleung/kopru-cli/internal/config"
 	"github.com/codebypatrickleung/kopru-cli/internal/logger"
 	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/oracle/oci-go-sdk/v65/common/auth"
 	"github.com/oracle/oci-go-sdk/v65/core"
 	"github.com/oracle/oci-go-sdk/v65/identity"
 	"github.com/oracle/oci-go-sdk/v65/objectstorage"
@@ -24,8 +26,20 @@ type Provider struct {
 }
 
 // NewProvider creates a new OCI provider instance.
-func NewProvider(region string, log *logger.Logger) (*Provider, error) {
-	configProvider := common.DefaultConfigProvider()
+func NewProvider(region, authType string, log *logger.Logger) (*Provider, error) {
+	var configProvider common.ConfigurationProvider
+	switch authType {
+	case config.OCIAuthTypeInstancePrincipal:
+		ip, err := auth.InstancePrincipalConfigurationProvider()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create instance principal configuration provider: %w", err)
+		}
+		configProvider = ip
+		log.Info("Using instance principal authentication for OCI")
+	default:
+		configProvider = common.DefaultConfigProvider()
+		log.Info("Using API key authentication for OCI")
+	}
 	return &Provider{
 		configProvider: configProvider,
 		region:         region,

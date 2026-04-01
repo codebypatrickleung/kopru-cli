@@ -15,7 +15,7 @@ import (
 
 var (
 	cfgFile string
-	version = "0.2.3"
+	version = "0.2.4"
 )
 
 func main() {
@@ -41,6 +41,7 @@ func init() {
 	flags := []struct {
 		name, shorthand, usage, defaultValue string
 	}{
+		{"oci-auth-type", "", "OCI authentication type (api_key or instance_principal)", "api_key"},
 		{"azure-subscription-id", "", "Azure subscription ID", ""},
 		{"azure-resource-group", "", "Azure resource group name", ""},
 		{"azure-compute-name", "", "Azure compute instance name", ""},
@@ -76,6 +77,7 @@ func init() {
 	}
 
 	bindings := map[string]string{
+		"OCI_AUTH_TYPE":           "oci-auth-type",
 		"AZURE_SUBSCRIPTION_ID":   "azure-subscription-id",
 		"AZURE_RESOURCE_GROUP":    "azure-resource-group",
 		"AZURE_COMPUTE_NAME":      "azure-compute-name",
