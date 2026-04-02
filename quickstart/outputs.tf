@@ -51,6 +51,16 @@ output "data_volume_attachment_ids" {
   value       = oci_core_volume_attachment.data_volume_attachment[*].id
 }
 
+output "dynamic_group_id" {
+  description = "OCID of the Kopru dynamic group for instance principal authentication"
+  value       = oci_identity_dynamic_group.kopru_dynamic_group.id
+}
+
+output "policy_id" {
+  description = "OCID of the Kopru IAM policy"
+  value       = oci_identity_policy.kopru_policy.id
+}
+
 output "kopru_init_log_path" {
   description = "Path to the Kopru CLI initialization log on the instance"
   value       = local.kopru_init_log_path

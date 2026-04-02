@@ -39,7 +39,7 @@ func (h *LinuxImageToOCIHandler) TargetPlatform() string { return "oci" }
 func (h *LinuxImageToOCIHandler) Initialize(cfg *config.Config, log *logger.Logger) error {
 	h.config, h.logger = cfg, log
 	var err error
-	if h.ociProvider, err = oci.NewProvider(cfg.OCIRegion, log); err != nil {
+	if h.ociProvider, err = oci.NewProvider(cfg.OCIRegion, cfg.OCIAuthType, log); err != nil {
 		return fmt.Errorf("failed to initialize OCI provider: %w", err)
 	}
 

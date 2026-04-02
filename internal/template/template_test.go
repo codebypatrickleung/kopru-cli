@@ -406,3 +406,61 @@ func TestSubnetPublicIPAssignment(t *testing.T) {
 
 	t.Log("✓ Subnet data source and assign_public_ip logic correctly configured in main.tf")
 }
+
+func TestProviderTFAuthType(t *testing.T) {
+	tests := []struct {
+		name            string
+		authType        string
+		expectAuthBlock bool
+		expectAuthValue string
+	}{
+		{
+			name:            "API key auth generates provider without auth block",
+			authType:        config.OCIAuthTypeAPIKey,
+			expectAuthBlock: false,
+		},
+		{
+			name:            "Instance principal auth generates provider with InstancePrincipal auth block",
+			authType:        config.OCIAuthTypeInstancePrincipal,
+			expectAuthBlock: true,
+			expectAuthValue: `"InstancePrincipal"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			cfg := &config.Config{
+				OCICompartmentID: "test-compartment",
+				OCISubnetID:      "test-subnet",
+				OCIRegion:        "us-ashburn-1",
+				OCIInstanceName:  "test-instance",
+				OCIImageName:     "test-image",
+				OCIAuthType:      tt.authType,
+			}
+			log := logger.New(false)
+			gen := NewOCIGenerator(cfg, log, "ocid1.image.oc1.test.fake-image-id", nil, nil, 50, 2, 8, "x86_64", tmpDir)
+			if err := gen.GenerateTemplate(); err != nil {
+				t.Fatalf("GenerateTemplate failed: %v", err)
+			}
+			providerTFPath := filepath.Join(tmpDir, "provider.tf")
+			content, err := os.ReadFile(providerTFPath)
+			if err != nil {
+				t.Fatalf("Failed to read provider.tf: %v", err)
+			}
+			providerContent := string(content)
+
+			hasAuthBlock := regexp.MustCompile(`auth\s*=`).MatchString(providerContent)
+			if tt.expectAuthBlock && !hasAuthBlock {
+				t.Errorf("Expected provider.tf to contain auth block for auth type %q, but it does not", tt.authType)
+			}
+			if !tt.expectAuthBlock && hasAuthBlock {
+				t.Errorf("Expected provider.tf NOT to contain auth block for auth type %q, but it does", tt.authType)
+			}
+			if tt.expectAuthValue != "" && !regexp.MustCompile(regexp.QuoteMeta(tt.expectAuthValue)).MatchString(providerContent) {
+				t.Errorf("Expected provider.tf to contain auth value %s, but it does not\nContent:\n%s", tt.expectAuthValue, providerContent)
+			}
+			t.Logf("✓ provider.tf correctly generated for auth type %q", tt.authType)
+		})
+	}
+}

@@ -83,6 +83,35 @@ resource "oci_core_instance" "kopru_instance" {
 }
 
 # ==============================================================================
+# INSTANCE PRINCIPAL - DYNAMIC GROUP AND POLICY
+# ==============================================================================
+
+resource "oci_identity_dynamic_group" "kopru_dynamic_group" {
+  compartment_id = var.tenancy_ocid
+  name           = "${var.display_name}-dynamic-group"
+  description    = "Dynamic group for Kopru CLI instance principal authentication"
+  matching_rule  = "Any {instance.id = '${oci_core_instance.kopru_instance.id}'}"
+  freeform_tags  = var.freeform_tags
+  defined_tags   = var.defined_tags
+}
+
+resource "oci_identity_policy" "kopru_policy" {
+  compartment_id = var.kopru_compartment_ocid
+  name           = "${var.display_name}-policy"
+  description    = "Policy granting Kopru CLI instance principal permissions to perform migrations"
+  statements = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.kopru_dynamic_group.name} to manage object-family in compartment id ${var.kopru_compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.kopru_dynamic_group.name} to manage instance-images in compartment id ${var.kopru_compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.kopru_dynamic_group.name} to manage instance-family in compartment id ${var.kopru_compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.kopru_dynamic_group.name} to manage volume-family in compartment id ${var.kopru_compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.kopru_dynamic_group.name} to manage virtual-network-family in compartment id ${var.kopru_compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.kopru_dynamic_group.name} to read compartments in compartment id ${var.kopru_compartment_ocid}",
+  ]
+  freeform_tags = var.freeform_tags
+  defined_tags  = var.defined_tags
+}
+
+# ==============================================================================
 # BLOCK STORAGE
 # ==============================================================================
 

@@ -14,6 +14,8 @@ const (
 	defaultInstanceName        = "kopru-instance"
 	imageSuffix                = "-image"
 	defaultDataDiskParallelism = 4
+	OCIAuthTypeAPIKey = "api_key"
+	OCIAuthTypeInstancePrincipal = "instance_principal"
 )
 
 // Config holds all configuration for the Kopru CLI.
@@ -33,12 +35,13 @@ type Config struct {
 	OCIInstanceName       string
 	OCIRegion             string
 	OCIAvailabilityDomain string
-	OSImageURL            string
-	SSHKeyFilePath        string
-	SkipExport            bool
-	SkipTemplateDeploy    bool
-	DataDiskParallelism   int
-	Debug                 bool
+	OCIAuthType        string
+	OSImageURL         string
+	SSHKeyFilePath     string
+	SkipExport         bool
+	SkipTemplateDeploy bool
+	DataDiskParallelism int
+	Debug               bool
 }
 
 // Load initializes configuration from file, environment variables, and flags.
@@ -48,6 +51,7 @@ func Load(configFile string) (*Config, error) {
 	viper.SetDefault("oci_bucket_name", "kopru-bucket")
 	viper.SetDefault("oci_image_name", defaultImageName)
 	viper.SetDefault("oci_instance_name", defaultInstanceName)
+	viper.SetDefault("oci_auth_type", OCIAuthTypeAPIKey)
 	viper.SetDefault("data_disk_parallelism", defaultDataDiskParallelism)
 
 	viper.AutomaticEnv()
@@ -98,6 +102,7 @@ func Load(configFile string) (*Config, error) {
 		OCIInstanceName:       ociInstanceName,
 		OCIRegion:             viper.GetString("oci_region"),
 		OCIAvailabilityDomain: viper.GetString("oci_availability_domain"),
+		OCIAuthType:           viper.GetString("oci_auth_type"),
 		OSImageURL:            viper.GetString("os_image_url"),
 		SSHKeyFilePath:        viper.GetString("ssh_key_file"),
 		SkipExport:            viper.GetBool("skip_os_export"),
@@ -128,6 +133,9 @@ func (c *Config) Validate() error {
 		}
 		if c.OCIRegion == "" {
 			return fmt.Errorf("oci_region is required for OCI target platform")
+		}
+		if c.OCIAuthType != OCIAuthTypeAPIKey && c.OCIAuthType != OCIAuthTypeInstancePrincipal {
+			return fmt.Errorf("oci_auth_type must be %q or %q, got %q", OCIAuthTypeAPIKey, OCIAuthTypeInstancePrincipal, c.OCIAuthType)
 		}
 	}
 	return nil

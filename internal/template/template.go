@@ -183,7 +183,13 @@ func (g *OCIGenerator) DeployTemplate() error {
 }
 
 func (g *OCIGenerator) generateProviderTF() error {
-	content := `# --------------------------------------------------------------------------------------------
+	var authBlock string
+	if g.config.OCIAuthType == config.OCIAuthTypeInstancePrincipal {
+		authBlock = `
+  auth = "InstancePrincipal"`
+	}
+
+	content := fmt.Sprintf(`# --------------------------------------------------------------------------------------------
 # OCI Provider Configuration
 # --------------------------------------------------------------------------------------------
 
@@ -198,9 +204,9 @@ terraform {
 }
 
 provider "oci" {
-  region = var.region
+  region = var.region%s
 }
-`
+`, authBlock)
 	return os.WriteFile(filepath.Join(g.templateOutputDir, "provider.tf"), []byte(content), 0600)
 }
 
